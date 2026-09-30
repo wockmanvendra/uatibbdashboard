@@ -53,12 +53,12 @@ function columnsFor(grain: GeoTablePanel['grain']): ColumnSpec[] {
 function Chip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'bad' | 'neutral' }) {
   const cls =
     tone === 'good'
-      ? 'border-good-soft text-good'
+      ? 'border-good-soft bg-[color-mix(in_srgb,var(--good)_8%,var(--surface))] text-good'
       : tone === 'bad'
-        ? 'border-bad-soft text-bad'
-        : 'border-rule text-ink-2';
+        ? 'border-bad-soft bg-[color-mix(in_srgb,var(--bad)_7%,var(--surface))] text-bad'
+        : 'border-rule bg-surface text-ink-2';
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[11px] tnum ${cls}`}>
+    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium tnum ${cls}`}>
       {label} <strong className="font-semibold">{value}</strong>
     </span>
   );
@@ -95,7 +95,7 @@ export function GeoTable({
                   data.rows.map((r) => columns.map((c) => r[c.index] ?? '')),
                 )
               }
-              className="rounded border border-rule px-2 py-0.5 text-[11px] text-ink-2 hover:bg-paper"
+              className="btn-ghost"
             >
               Export
             </button>

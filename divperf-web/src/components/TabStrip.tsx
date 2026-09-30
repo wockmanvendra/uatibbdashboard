@@ -14,7 +14,7 @@ export function TabStrip() {
   const cancelRef = useRef<(() => void) | null>(null);
 
   return (
-    <nav className="border-b border-rule bg-surface px-5" aria-label="Dashboard tabs">
+    <nav className="app-bar relative z-20 bg-surface px-5" aria-label="Dashboard tabs">
       <ul className="flex gap-1 overflow-x-auto">
         {TABS.map((t) => (
           <li key={t.id}>
@@ -33,8 +33,8 @@ export function TabStrip() {
               className={({ isActive }) =>
                 `-mb-px inline-block whitespace-nowrap border-b-2 px-3 py-2 text-[13px] transition-colors ${
                   isActive
-                    ? 'border-[var(--series-disp)] font-medium text-ink'
-                    : 'border-transparent text-ink-2 hover:text-ink'
+                    ? 'border-[var(--series-disp)] font-semibold text-[var(--series-disp)]'
+                    : 'border-transparent text-ink-2 hover:border-rule hover:text-ink'
                 }`
               }
             >

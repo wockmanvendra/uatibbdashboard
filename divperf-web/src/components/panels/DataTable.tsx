@@ -50,12 +50,13 @@ function renderCell(v: string | number | null, format: CellFormat) {
     case 'growth':
       return <span className={growthClass(v as number)}>{growth(v as number)}</span>;
     case 'ach':
+      // Bar and figure on one line, so the row keeps its height.
       return (
-        <div className="flex flex-col items-end gap-1">
-          <span>{percent(v as number)}</span>
-          <div className="w-16">
-            <GapRibbon ach={v as number} label="Achievement" />
+        <div className="flex items-center justify-end gap-2">
+          <div className="w-14">
+            <GapRibbon ach={v as number} label="Achievement" inline />
           </div>
+          <span className="w-12">{percent(v as number)}</span>
         </div>
       );
     case 'number':
@@ -104,24 +105,29 @@ export function DataTable({
       s?.index === index ? { index, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { index, dir: 'desc' },
     );
 
+  const isLeft = (c: ColumnSpec) =>
+    (c.align ?? (c.format === 'text' || c.format === 'code' ? 'left' : 'right')) === 'left';
+  const last = columns.length - 1;
+
   return (
     <div className="overflow-auto" style={{ maxHeight }}>
-      <table className="w-full border-collapse text-table tnum">
+      {/* Separate borders so the header band can have rounded ends. */}
+      <table className="w-full border-separate border-spacing-0 text-table tnum">
         <caption className="sr-only">{caption}</caption>
-        <thead className="sticky top-0 z-10 bg-surface">
-          <tr className="border-b border-rule">
-            {columns.map((c) => {
+        <thead className="sticky top-0 z-10">
+          <tr>
+            {columns.map((c, ci) => {
               const active = sort?.index === c.index;
               return (
                 <th
                   key={c.index}
                   scope="col"
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  className={`whitespace-nowrap bg-surface py-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3 ${
-                    (c.align ?? (c.format === 'text' || c.format === 'code' ? 'left' : 'right')) === 'left'
-                      ? 'pr-3 text-left'
-                      : 'pl-3 text-right'
-                  } ${c.sticky ? 'sticky left-0 z-20' : ''}`}
+                  className={`whitespace-nowrap bg-[var(--table-head)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3 ${
+                    isLeft(c) ? 'text-left' : 'text-right'
+                  } ${ci === 0 ? 'rounded-l-md' : ''} ${ci === last ? 'rounded-r-md' : ''} ${
+                    c.sticky ? 'sticky left-0 z-20' : ''
+                  }`}
                 >
                   <button
                     type="button"
@@ -141,18 +147,19 @@ export function DataTable({
 
         <tbody>
           {sorted.map((row, i) => (
-            <tr key={String(row[0]) + i} className="border-b border-rule-soft hover:bg-paper">
+            <tr
+              key={String(row[0]) + i}
+              className={`${i % 2 ? 'bg-[var(--table-zebra)]' : 'bg-surface'} transition-colors hover:bg-[var(--table-hover)]`}
+            >
               {columns.map((c) => {
-                const left =
-                  (c.align ?? (c.format === 'text' || c.format === 'code' ? 'left' : 'right')) === 'left';
                 const Tag = c.index === 0 ? 'th' : 'td';
                 return (
                   <Tag
                     key={c.index}
                     {...(c.index === 0 ? { scope: 'row' as const } : {})}
-                    className={`${left ? 'pr-3 text-left font-normal' : 'pl-3 text-right'} ${
-                      c.index === 0 ? 'text-ink' : 'text-ink-2'
-                    } ${c.sticky ? 'sticky left-0 bg-surface' : ''}`}
+                    className={`border-b border-rule-soft px-3 ${isLeft(c) ? 'text-left' : 'text-right'} ${
+                      c.index === 0 ? 'font-medium text-ink' : 'text-ink-2'
+                    } ${c.sticky ? 'sticky left-0 bg-inherit' : ''}`}
                     style={{ height: 'var(--row-h)' }}
                   >
                     {renderCell(row[c.index] ?? null, c.format)}
@@ -172,15 +179,15 @@ export function DataTable({
         </tbody>
 
         {total && (
-          <tfoot className="sticky bottom-0 bg-surface">
-            <tr className="border-t-2 border-rule font-medium">
-              {columns.map((c) => {
-                const left =
-                  (c.align ?? (c.format === 'text' || c.format === 'code' ? 'left' : 'right')) === 'left';
+          <tfoot className="sticky bottom-0">
+            <tr className="font-semibold">
+              {columns.map((c, ci) => {
                 return (
                   <td
                     key={c.index}
-                    className={`bg-surface text-ink ${left ? 'pr-3 text-left' : 'pl-3 text-right'} ${
+                    className={`border-t-2 border-rule bg-[var(--table-total)] px-3 text-ink shadow-[var(--shadow-total)] ${
+                      isLeft(c) ? 'text-left' : 'text-right'
+                    } ${ci === 0 ? 'rounded-bl-md' : ''} ${ci === last ? 'rounded-br-md' : ''} ${
                       c.sticky ? 'sticky left-0' : ''
                     }`}
                     style={{ height: 'var(--row-h)' }}

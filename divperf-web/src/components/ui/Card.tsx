@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 interface CardProps {
   title?: string;
@@ -8,17 +8,23 @@ interface CardProps {
   className?: string;
   /** Dims the card while a refetch is in flight, per §8.6. */
   stale?: boolean;
+  /** A colour (usually a series token) for the card's top edge and title wash. */
+  accent?: string;
 }
 
-export function Card({ title, aside, children, className = '', stale = false }: CardProps) {
+export function Card({ title, aside, children, className = '', stale = false, accent }: CardProps) {
+  const style: CSSProperties & { '--card-accent'?: string } = {};
+  if (stale) style.opacity = 0.55;
+  if (accent) style['--card-accent'] = accent;
+
   return (
     <section
-      className={`card flex min-w-0 flex-col ${className}`}
-      style={stale ? { opacity: 0.55 } : undefined}
+      className={`card flex min-w-0 flex-col ${accent ? 'card-accent' : ''} ${className}`}
+      style={style}
       aria-busy={stale || undefined}
     >
       {(title || aside) && (
-        <header className="mb-3 flex items-baseline justify-between gap-2">
+        <header className="mb-3 flex items-center justify-between gap-2">
           {title && <h2 className="panel-title">{title}</h2>}
           {aside}
         </header>

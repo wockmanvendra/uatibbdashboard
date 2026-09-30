@@ -26,7 +26,8 @@
   --ink: #10242e;
   --ink-2: #47606b;
   --ink-3: #7b909a;
-  --paper: #f7f8f6;
+  /* A shade deeper than the cards, so a white card reads as a surface. */
+  --paper: #eff3f2;
   --surface: #ffffff;
   --rule: #dde3e1;
 
@@ -53,6 +54,23 @@
   --notch: rgba(16, 36, 46, 0.45);
   --good-soft: #a9c8b5;
   --bad-soft: #dfafad;
+
+  /* Elevation, mixed from ink so shadows share the palette's hue. */
+  --shadow-card:
+    0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent),
+    0 4px 14px -2px color-mix(in srgb, var(--ink) 7%, transparent);
+  --shadow-card-hover:
+    0 1px 3px color-mix(in srgb, var(--ink) 7%, transparent),
+    0 10px 24px -6px color-mix(in srgb, var(--ink) 12%, transparent);
+  --shadow-bar: 0 1px 0 var(--rule), 0 6px 16px -10px color-mix(in srgb, var(--ink) 25%, transparent);
+
+  /* Table bands. */
+  --table-head: color-mix(in srgb, var(--paper) 75%, var(--surface));
+  --table-zebra: color-mix(in srgb, var(--paper) 40%, var(--surface));
+  --table-hover: color-mix(in srgb, var(--series-disp) 7%, var(--surface));
+  --table-total: color-mix(in srgb, var(--series-disp) 8%, var(--surface));
+  /* The pinned Total row sits over rows scrolling beneath it. */
+  --shadow-total: 0 -6px 10px -8px color-mix(in srgb, var(--ink) 35%, transparent);
 
   /* Density toggle. Compact fits the whole tab on one screen. (§9.3) */
   --pad-card: 16px;
@@ -102,14 +120,82 @@
 }
 
 @layer components {
-  /* Cards, not shadows: a shadow on a grid of 14 cards reads as noise. (§9.3) */
+  /*
+   * Cards: a hairline edge plus a soft, low shadow — kept faint so a grid of
+   * fourteen cards reads as surfaces, not noise. (§9.3)
+   */
   .card {
-    @apply rounded-card border border-rule bg-surface;
+    @apply rounded-card bg-surface;
+    --card-accent: var(--series-disp);
+    border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+    box-shadow: var(--shadow-card);
     padding: var(--pad-card);
+    transition: box-shadow 0.2s ease;
+  }
+
+  .card:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* KPI cards: a coloured top edge and a faint wash of the same colour. */
+  .card-accent {
+    border-top: 3px solid var(--card-accent);
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card-accent) 7%, var(--surface)) 0,
+      var(--surface) 64px
+    );
   }
 
   .panel-title {
     @apply text-panel text-ink;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* A short bar in the card's accent marks every panel title. */
+  .panel-title::before {
+    content: '';
+    flex: none;
+    width: 3px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--card-accent);
+  }
+
+  /* The KPI cards already carry the accent on their top edge. */
+  .card-accent .panel-title::before {
+    display: none;
+  }
+
+  /* Small secondary actions in card headers: Export, Table/Chart. */
+  .btn-ghost {
+    @apply rounded-md px-2.5 py-1 text-[11px] font-medium text-ink-2;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 4%, transparent);
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn-ghost:hover {
+    background: var(--table-hover);
+    border-color: color-mix(in srgb, var(--series-disp) 30%, var(--rule));
+    color: var(--series-disp);
+  }
+
+  /* The top bar sits above the page, not on it. */
+  .app-bar {
+    box-shadow: var(--shadow-bar);
+  }
+
+  /* The floating "Loading… / Updating…" pill. */
+  .loading-pill {
+    @apply flex items-center gap-2.5 whitespace-nowrap rounded-full px-5 py-2.5 text-[13px];
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border: 1px solid color-mix(in srgb, var(--series-disp) 22%, var(--rule));
+    box-shadow: var(--shadow-card-hover);
+    backdrop-filter: blur(6px);
   }
 
   .kpi-label {

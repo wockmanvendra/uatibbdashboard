@@ -60,7 +60,7 @@ export function ChartFrame({
           onClick={() => setShowTable((v) => !v)}
           aria-expanded={showTable}
           aria-controls={tableId}
-          className="shrink-0 rounded border border-rule px-2 py-0.5 text-[11px] text-ink-2 hover:bg-paper"
+          className="btn-ghost shrink-0"
         >
           {showTable ? 'Chart' : 'Table'}
         </button>

@@ -293,6 +293,13 @@ describe('sign-in', () => {
 });
 
 describe('Division performance tab', () => {
+  it('shows a loading indicator until the data arrives', async () => {
+    renderApp();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading dashboard…');
+    expect(await screen.findByText('1.75 Cr')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
   it('renders the KPI band with Indian-abbreviated money', async () => {
     renderApp();
     // 17,500,000 must read as "1.75 Cr", not "$17.5M" and not "1,75,00,000".

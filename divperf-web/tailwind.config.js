@@ -34,11 +34,11 @@ export default {
       fontSize: {
         kpi: ['28px', { lineHeight: '1.1', letterSpacing: '-0.02em', fontWeight: '600' }],
         'kpi-label': ['11px', { lineHeight: '1.2', letterSpacing: '0.08em', fontWeight: '500' }],
-        panel: ['13px', { lineHeight: '1.3', fontWeight: '600' }],
+        panel: ['14px', { lineHeight: '1.3', fontWeight: '600' }],
         table: ['13px', { lineHeight: '1.4' }],
         tick: ['11px', { lineHeight: '1.2' }],
       },
-      borderRadius: { card: '6px' },
+      borderRadius: { card: '12px' },
     },
   },
   plugins: [],

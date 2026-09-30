@@ -1652,8 +1652,13 @@ labels where letterspacing carries it.
 
 - 12-column grid, 16px gutters, 20px page margin.
 - Filter bar is sticky at the top, 56px, hairline bottom rule, `--surface`.
-- Panels are cards: `--surface`, 1px `--rule`, `border-radius: 6px`, 16px
-  padding. No shadows — shadow on a dense grid of 14 cards reads as noise.
+- Panels are cards: `--surface`, 1px `--rule`, `border-radius: 12px`, 16px
+  padding, and a soft two-layer shadow (`--shadow-card`) that deepens on
+  hover — kept faint so a dense grid of 14 cards still reads as surfaces, not
+  noise (changed 2026-09-30 at the user's request; originally no shadows). KPI
+  cards carry a 3px top edge in their series colour; every other panel title
+  has a short bar in the accent colour. Tables have a tinted header band,
+  zebra rows, a hover tint, and a tinted Total row.
 - Density toggle (comfortable / compact) persisted in localStorage. Compact
   drops padding to 10px and table rows to 28px, for the users who want the whole
   tab on one screen with no scroll.

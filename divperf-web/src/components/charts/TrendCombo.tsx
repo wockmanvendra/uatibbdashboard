@@ -145,7 +145,10 @@ export function TrendCombo({
       : []),
   ];
 
-  const hasData = bars.some((b) => b.data.some((v) => v !== null && v !== 0));
+  // A ratio line alone (CN% without its split) is still something to draw.
+  const hasData = [...bars.map((b) => b.data), ratio?.data ?? []].some((d) =>
+    d.some((v) => v !== null && v !== 0),
+  );
 
   return (
     <ChartFrame

@@ -42,7 +42,7 @@ export function CnDetailPanels({
             onClick={() =>
               downloadCsv(file, COLUMNS.map((c) => c.label), rows.map((r) => COLUMNS.map((c) => r[c.index] ?? '')))
             }
-            className="rounded border border-rule px-2 py-0.5 text-[11px] text-ink-2 hover:bg-paper"
+            className="btn-ghost"
           >
             Export
           </button>

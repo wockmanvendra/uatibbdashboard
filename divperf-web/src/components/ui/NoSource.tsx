@@ -39,7 +39,7 @@ export function UnavailableChart({
         <NoSourceBadge />
       </header>
       <div
-        className="flex flex-1 items-center justify-center rounded border border-dashed border-rule px-6 text-center"
+        className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-rule bg-[var(--table-zebra)] px-6 text-center"
         style={{ minHeight: height }}
       >
         <p className="max-w-sm text-[12px] leading-relaxed text-ink-3">{reason}</p>

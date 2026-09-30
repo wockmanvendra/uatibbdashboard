@@ -82,7 +82,8 @@ export function ratioAxis(name: string, isPercent: boolean) {
       color: INK_3,
       fontSize: 11,
       fontFamily: FONT,
-      formatter: (v: number) => (isPercent ? `${v.toFixed(0)}%` : axisMoney(v)),
+      // One decimal where it matters, so a 0–3% axis does not read "3%, 3%, 2%, 2%".
+      formatter: (v: number) => (isPercent ? `${Number(v.toFixed(1))}%` : axisMoney(v)),
     },
   };
 }

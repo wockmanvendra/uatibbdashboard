@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiRequestError, requestOtp, verifyOtp } from '../lib/api';
 import { useAuthStore } from './authStore';
 import { OtpInput } from './OtpInput';
+import { Spinner } from '../components/ui/States';
 
 const OTP_LENGTH = 6;
 const EMPTY_OTP: string[] = Array(OTP_LENGTH).fill('');
@@ -163,7 +164,14 @@ export function LoginPage() {
                 />
                 {step === 'mobile' && (
                   <button type="submit" disabled={busy !== null} className="login-send-btn">
-                    {busy === 'send' ? 'Sending…' : 'Send OTP'}
+                    {busy === 'send' ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Spinner size={13} />
+                        Sending…
+                      </span>
+                    ) : (
+                      'Send OTP'
+                    )}
                   </button>
                 )}
               </div>
@@ -217,7 +225,14 @@ export function LoginPage() {
                       onClick={() => void sendOtp()}
                       disabled={busy !== null}
                     >
-                      {busy === 'send' ? 'Sending…' : 'Resend OTP'}
+                      {busy === 'send' ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Spinner size={12} />
+                          Sending…
+                        </span>
+                      ) : (
+                        'Resend OTP'
+                      )}
                     </button>
                   )}
                 </div>
@@ -236,7 +251,14 @@ export function LoginPage() {
                 disabled={busy !== null || otp.join('').length < OTP_LENGTH}
                 className="login-primary-btn"
               >
-                {busy === 'verify' ? 'Verifying…' : 'Verify & open dashboard'}
+                {busy === 'verify' ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner size={16} />
+                    Verifying…
+                  </span>
+                ) : (
+                  'Verify & open dashboard'
+                )}
               </button>
             )}
           </form>

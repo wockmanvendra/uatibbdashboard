@@ -34,7 +34,7 @@ export function KpiBand({
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {/* Primary — Tgt / Coll / Disp against Value, Ach%, Gr% */}
-      <Card title="Primary" stale={stale}>
+      <Card title="Primary" stale={stale} accent="var(--series-disp)">
         {loading || !primary ? (
           <div className="space-y-4">
             <StatSkeleton />
@@ -65,6 +65,7 @@ export function KpiBand({
       <Card
         title="PCPM"
         stale={stale}
+        accent="var(--series-coll)"
         aside={
           pcpm && allNull(pcpm.budgetTm, pcpm.pcpmCollection) ? (
             <NoSourceBadge title="No TM headcount feed — PCPM has no denominator." />
@@ -92,6 +93,7 @@ export function KpiBand({
       <Card
         title="Secondary"
         stale={stale}
+        accent="var(--series-sec)"
         aside={
           secondary && allNull(secondary.value, secondary.grPct) ? (
             <NoSourceBadge title="No chemist-level sales feed. This view holds primary sales only." />
@@ -115,6 +117,7 @@ export function KpiBand({
       <Card
         title="RCPA value"
         stale={stale}
+        accent="var(--series-rcpa)"
         aside={
           rcpa && allNull(rcpa.plan, rcpa.actual, rcpa.achPct, rcpa.grPct) ? (
             <NoSourceBadge title="No RCPA feed. Doctor-level plan and actual are not in this view." />

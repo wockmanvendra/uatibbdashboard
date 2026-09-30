@@ -26,9 +26,11 @@ interface GapRibbonProps {
   ach: number | null | undefined;
   /** Accessible name, e.g. "Collection achievement". */
   label: string;
+  /** Drops the top margin, for use beside a figure rather than under one. */
+  inline?: boolean;
 }
 
-export function GapRibbon({ ach, label }: GapRibbonProps) {
+export function GapRibbon({ ach, label, inline = false }: GapRibbonProps) {
   const band = achBand(ach);
   const value = ach ?? 0;
   const filled = Math.max(0, Math.min(value, SCALE_MAX));
@@ -38,7 +40,7 @@ export function GapRibbon({ ach, label }: GapRibbonProps) {
 
   return (
     <div
-      className="relative mt-2 h-1 w-full overflow-hidden rounded-sm bg-track"
+      className={`relative ${inline ? '' : 'mt-2'} h-1 w-full overflow-hidden rounded-sm bg-track`}
       role="meter"
       aria-label={label}
       aria-valuenow={ach ?? undefined}

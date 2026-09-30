@@ -21,7 +21,7 @@ import { CnDetailPanels } from '../components/panels/CnDetail';
 import { TrendCombo } from '../components/charts/TrendCombo';
 import { MixPanelCard } from '../components/charts/MixPanel';
 import { SERIES, CHART_HEIGHT } from '../components/charts/chartTheme';
-import { ChartSkeleton, ErrorState, RefetchBar } from '../components/ui/States';
+import { ChartSkeleton, ErrorState, LoadingIndicator, RefetchBar } from '../components/ui/States';
 import { UnavailableChart } from '../components/ui/NoSource';
 import { DashboardFooter } from '../components/ui/DashboardFooter';
 import { label as monthLabel } from '../lib/yrmn';
@@ -75,8 +75,9 @@ export function TabPage() {
   return (
     <div className="relative">
       <RefetchBar active={stale} />
+      <LoadingIndicator state={firstLoad ? 'loading' : stale ? 'updating' : null} />
 
-      <div className="space-y-4 px-5 py-4">
+      <div className="space-y-5 px-5 py-5">
         {/* ---- KPI band ------------------------------------------------- */}
         {has('primary') && (
           <KpiBand

@@ -4,12 +4,66 @@
  * None of these is an afterthought:
  *  - first load        skeletons matching final panel dimensions, no layout shift
  *  - refetch           panels stay at opacity 0.55 with a thin progress line
+ *  - either            a spinner pill under the filter bar says what is happening
  *  - empty             say so plainly and say what to change
  *
  * Errors state what happened and what to do. They do not apologize and they are
  * never vague.
  */
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+
+/** A small rotating ring in the current text colour. Decorative: pair it with text. */
+export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg
+      className={`shrink-0 animate-spin ${className}`}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+      <path d="M21.5 12A9.5 9.5 0 0 0 12 2.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Past this, a load is slow enough to explain. Live warehouse queries take seconds. */
+const SLOW_MS = 4000;
+
+/**
+ * The dashboard's loading pill. Floats at the bottom centre of the viewport, so
+ * it stays in view while the page scrolls, covers no header or title, and never
+ * blocks a click.
+ */
+export function LoadingIndicator({ state }: { state: 'loading' | 'updating' | null }) {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    setSlow(false);
+    if (!state) return;
+    const t = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  if (!state) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+      <div role="status" aria-live="polite" className="loading-pill rise-in">
+        <Spinner size={16} className="text-[var(--series-disp)]" />
+        <span className="font-medium text-ink">
+          {state === 'loading' ? 'Loading dashboard…' : 'Updating…'}
+        </span>
+        {slow && (
+          <span className="hidden text-ink-3 sm:inline">
+            Fetching from the warehouse — this can take a few seconds.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function Skeleton({
   className = '',
@@ -48,15 +102,14 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
-/** The indeterminate line at the top of the content area during a refetch. */
+/**
+ * The indeterminate line at the top of the content area during a refetch.
+ * Visual only: the loading pill is what announces the update.
+ */
 export function RefetchBar({ active }: { active: boolean }) {
   if (!active) return null;
   return (
-    <div
-      className="progress-line pointer-events-none absolute inset-x-0 top-0 h-0.5"
-      role="status"
-      aria-label="Updating"
-    />
+    <div className="progress-line pointer-events-none absolute inset-x-0 top-0 h-0.5" aria-hidden="true" />
   );
 }
 

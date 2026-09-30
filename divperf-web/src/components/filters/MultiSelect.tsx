@@ -6,6 +6,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FilterOption } from '../../types/api';
+import { Spinner } from '../ui/States';
 
 interface MultiSelectProps {
   label: string;
@@ -76,7 +77,14 @@ export function MultiSelect({
             : 'border-rule bg-surface text-ink hover:border-ink-3'
         } ${selected.length > 0 ? 'border-ink-3' : ''}`}
       >
-        <span className="truncate">{loading ? '…' : summary}</span>
+        {loading ? (
+          <span className="flex items-center gap-1.5 text-ink-3">
+            <Spinner size={12} className="text-[var(--series-disp)]" />
+            Loading
+          </span>
+        ) : (
+          <span className="truncate">{summary}</span>
+        )}
         <span aria-hidden="true" className="shrink-0 text-ink-3">
           ▾
         </span>
