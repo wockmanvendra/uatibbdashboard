@@ -1,0 +1,113 @@
+.customer-profile-page {
+  position: relative;
+  z-index: 1;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 2.75rem) clamp(1rem, 4vw, 2.5rem) 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── hero ── */
+
+.customer-profile-page__hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem clamp(1.5rem, 4vw, 2.5rem);
+  border-radius: 24px;
+  background: linear-gradient(155deg, #ffffff 0%, var(--paper-deep) 100%);
+  box-shadow: 0 1px 2px rgba(26, 29, 33, 0.04), 0 10px 28px rgba(26, 29, 33, 0.06);
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.customer-profile-page__hero-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(46px);
+  pointer-events: none;
+}
+
+.customer-profile-page__hero-blob--a {
+  width: 300px;
+  height: 300px;
+  top: -140px;
+  right: -80px;
+  background: radial-gradient(circle, rgba(31, 157, 124, 0.24) 0%, rgba(31, 157, 124, 0) 70%);
+}
+
+.customer-profile-page__hero-blob--b {
+  width: 240px;
+  height: 240px;
+  bottom: -130px;
+  left: 40%;
+  background: radial-gradient(circle, rgba(255, 106, 69, 0.15) 0%, rgba(255, 106, 69, 0) 70%);
+}
+
+.customer-profile-page__avatar {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: linear-gradient(155deg, var(--steel) 0%, var(--steel-deep) 100%);
+  box-shadow: 0 8px 20px rgba(21, 122, 96, 0.28), 0 0 0 4px #ffffff;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+}
+
+.customer-profile-page__hero-text {
+  position: relative;
+  min-width: 0;
+}
+
+.customer-profile-page__eyebrow {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--steel-deep);
+}
+
+.customer-profile-page__name {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.customer-profile-page__badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.customer-profile-page__meta {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 40rem) {
+  .customer-profile-page__hero {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+}

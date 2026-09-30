@@ -1,0 +1,65 @@
+.paylink {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  background: var(--paper);
+}
+
+.paylink__card {
+  width: min(26rem, 100%);
+  padding: 2.5rem 2rem;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(26, 29, 33, 0.04), 0 24px 48px rgba(26, 29, 33, 0.08);
+  text-align: center;
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.paylink__eyebrow {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--steel-deep);
+}
+
+.paylink__title {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.paylink__hint {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.paylink__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  border-radius: 50%;
+}
+
+.paylink__icon--ok {
+  color: var(--ok);
+  background: rgba(63, 174, 107, 0.12);
+}
+
+.paylink__icon--failure {
+  color: var(--signal-deep);
+  background: rgba(224, 80, 46, 0.1);
+}

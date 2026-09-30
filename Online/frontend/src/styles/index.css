@@ -1,0 +1,69 @@
+:root {
+  color-scheme: light;
+
+  /* palette — customer-facing ordering portal: warm ivory surface,
+     emerald/teal as the primary "trust & health" brand color, coral
+     as the energetic call-to-action accent for ordering and deals.
+     --ink stays neutral so existing translucent overlays still read
+     correctly on pages pending migration to this system. */
+  --ink: #1a1d21;
+  --ink-soft: #2b2f35;
+  --paper: #faf6ef;
+  --paper-deep: #f1e8d8;
+  --paper-line: #e6dcc8;
+  --signal: #ff6a45;
+  --signal-deep: #e0502b;
+  --steel: #1f9d7c;
+  --steel-deep: #157a60;
+  --ok: #3fae6b;
+  --ink-faint: rgba(26, 29, 33, 0.55);
+
+  /* type */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-body: 'Public Sans', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background-color: var(--paper);
+  color: var(--ink);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.layout__content {
+  flex: 1;
+  position: relative;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse 800px 520px at 100% -10%, rgba(31, 157, 124, 0.10), transparent 60%),
+    radial-gradient(ellipse 640px 420px at -10% 100%, rgba(255, 106, 69, 0.08), transparent 60%);
+  background-repeat: no-repeat;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,185 @@
+.audit-log-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 29, 33, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  animation: confirm-fade-in 0.15s ease both;
+}
+
+.audit-log-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(36rem, 92vw);
+  max-height: 80vh;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 24px 56px rgba(26, 29, 33, 0.32);
+  animation: rise-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow: hidden;
+}
+
+.audit-log-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--paper-line);
+  flex-shrink: 0;
+}
+
+.audit-log-dialog__title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.audit-log-dialog__close {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  background: var(--paper-deep);
+  color: var(--ink);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.audit-log-dialog__close:hover {
+  background: var(--steel);
+  color: #ffffff;
+}
+
+.audit-log-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.audit-log-dialog__empty {
+  margin: 0;
+  padding: 1.5rem;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--ink-faint);
+}
+
+.audit-log-dialog__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.audit-log-dialog__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: var(--paper-deep);
+  border-radius: 14px;
+}
+
+.audit-log-dialog__pill {
+  flex: none;
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.35em 0.75em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.audit-log-dialog__pill--approve {
+  color: #2f8f54;
+  background: rgba(63, 174, 107, 0.15);
+}
+
+.audit-log-dialog__pill--reject {
+  color: var(--signal-deep);
+  background: rgba(224, 80, 46, 0.1);
+}
+
+.audit-log-dialog__pill--resubmit {
+  color: var(--steel-deep);
+  background: rgba(31, 157, 124, 0.12);
+}
+
+.audit-log-dialog__pill--place {
+  color: var(--ink-faint);
+  background: var(--paper-deep);
+}
+
+.audit-log-dialog__pill--dispatch {
+  color: var(--steel-deep);
+  background: rgba(31, 157, 124, 0.12);
+}
+
+.audit-log-dialog__pill--payment-update {
+  color: #2f8f54;
+  background: rgba(63, 174, 107, 0.15);
+}
+
+.audit-log-dialog__details {
+  flex: 1;
+  min-width: 0;
+}
+
+.audit-log-dialog__person {
+  margin: 0 0 0.2rem;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.audit-log-dialog__designation {
+  margin-left: 0.5em;
+  font-weight: 500;
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+}
+
+.audit-log-dialog__reason {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.audit-log-dialog__time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  padding-top: 0.15rem;
+}
+
+@media (max-width: 30rem) {
+  .audit-log-dialog__row {
+    flex-wrap: wrap;
+  }
+  .audit-log-dialog__time {
+    margin-left: auto;
+  }
+}

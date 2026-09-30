@@ -1,0 +1,27 @@
+.division-select {
+  appearance: none;
+  height: 2.75rem;
+  padding: 0 2.25rem 0 1rem;
+  border-radius: 12px;
+  background: #ffffff
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16' fill='none' stroke='%231a1d21' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")
+    no-repeat right 0.75rem center;
+  border: 1.5px solid var(--paper-line);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.division-select:hover,
+.division-select:focus-visible {
+  border-color: var(--steel);
+  outline: none;
+}
+
+.division-select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

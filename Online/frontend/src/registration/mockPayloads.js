@@ -1,0 +1,90 @@
+// Example JSON payloads — one per customer type — showing the shape the
+// backend receives from `submitRegistration`/`buildRegistrationFormData`.
+// File fields are represented by their captured File metadata; in the real
+// multipart request these would be the binary attachments themselves.
+
+export const MOCK_PAYLOADS = {
+  patient: {
+    customerType: 'patient',
+    fullName: 'Meera Joshi',
+    age: 29,
+    gender: 'Female',
+    email: 'meera.joshi@example.com',
+    mobile: '9876543210',
+    address: '12 Lake Garden Road, Kothrud',
+    pinCode: '411001',
+    city: 'Pune',
+    state: 'Maharashtra',
+    cfaCode: 'CFA Pune',
+  },
+
+  doctor: {
+    customerType: 'doctor',
+    selectedDoctorId: 'doc-1001',
+    doctorName: 'Dr. Anjali Mehta',
+    age: 41,
+    gender: 'Female',
+    email: 'anjali.mehta@carepoint.in',
+    mobile: '9821044556',
+    address: '14 Lotus Tower, FC Road',
+    pinCode: '411001',
+    city: 'Pune',
+    state: 'Maharashtra',
+    cfaCode: 'CFA Pune',
+    doctorRegistrationNumber: 'MH-MED-58213',
+    documents: {
+      signedRegistrationForm: { name: 'dr-anjali-signed-form.pdf', type: 'application/pdf', size: 842311 },
+    },
+  },
+
+  'doctor-pharmacy': {
+    customerType: 'doctor-pharmacy',
+    selectedPharmacyId: 'pha-2001',
+    pharmacyName: 'Wellness Plus Pharmacy',
+    linkedDoctorId: 'doc-1001',
+    linkedDoctorName: 'Dr. Anjali Mehta',
+    email: 'contact@wellnessplus.in',
+    mobile: '9823456710',
+    address: '3 Market Yard Road',
+    pinCode: '411001',
+    city: 'Pune',
+    state: 'Maharashtra',
+    cfaCode: 'CFA Pune',
+    gstNumber: '27AAACW1234F1Z5',
+    compositionScheme: false,
+    drugLicenceNumber: 'MH-DL-44120',
+    drugLicenceValidTill: '2027-03-31',
+    panNumber: 'AAACW1234F',
+    aadhaarNumber: '234567891012',
+    documents: {
+      signedRegistrationForm: { name: 'wellness-plus-signed-form.pdf', type: 'application/pdf', size: 731904 },
+      gstCertificate: { name: 'wellness-plus-gst-certificate.pdf', type: 'application/pdf', size: 512004 },
+    },
+  },
+
+  hospital: {
+    customerType: 'hospital',
+    selectedHospitalId: 'hos-3001',
+    hospitalName: 'Sunrise Multispecialty Hospital',
+    email: 'frontdesk@sunrisemultispecialty.in',
+    mobile: '9822110099',
+    address: '101 Senapati Bapat Road',
+    pinCode: '411001',
+    city: 'Pune',
+    state: 'Maharashtra',
+    cfaCode: 'CFA Pune',
+    gstNumber: '27AAFCS4321K1Z7',
+    compositionScheme: false,
+    hospitalRegistrationNumber: 'MH-HOSP-22018',
+    drugLicenceNumber: 'MH-DL-66043',
+    drugLicenceValidTill: '2026-12-31',
+    panNumber: 'AAFCS4321K',
+    aadhaarNumber: '567891230456',
+    documents: {
+      signedRegistrationForm: { name: 'sunrise-signed-form.pdf', type: 'application/pdf', size: 698213 },
+      gstCertificate: { name: 'sunrise-gst-certificate.pdf', type: 'application/pdf', size: 489211 },
+      hospitalRegistrationCertificate: { name: 'sunrise-hospital-registration.pdf', type: 'application/pdf', size: 712044 },
+      drugLicenceCertificate: { name: 'sunrise-drug-licence.pdf', type: 'application/pdf', size: 455008 },
+    },
+  },
+}

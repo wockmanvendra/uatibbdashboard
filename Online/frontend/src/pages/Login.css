@@ -1,0 +1,821 @@
+/* ── Layout ─────────────────────────────────────────────────────────────────── */
+
+.login {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ── Brand panel (left, deep emerald) ──────────────────────────────────────── */
+
+.login__brand {
+  position: relative;
+  flex: 0 0 42%;
+  background-color: var(--steel-deep);
+  background-image:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.05) 0%, transparent 38%),
+    radial-gradient(ellipse 640px 480px at 15% 105%, rgba(14, 58, 46, 0.55), transparent 62%),
+    radial-gradient(ellipse 420px 320px at 90% -10%, rgba(255, 106, 69, 0.22), transparent 55%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login__brand-watermark {
+  position: absolute;
+  top: -8%;
+  right: -12%;
+  width: 65%;
+  height: auto;
+  opacity: 0.07;
+  transform: rotate(18deg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login__brand-inner {
+  position: relative;
+  z-index: 1;
+  padding: 3rem;
+}
+
+.login__brand-mark {
+  display: block;
+  height: 56px;
+  width: auto;
+  margin: 0 0 1.5rem;
+}
+
+.login__brand-rule {
+  display: block;
+  width: 2.5rem;
+  height: 2px;
+  background: var(--signal);
+  margin: 0 0 1.5rem;
+}
+
+.login__brand-eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--signal);
+  margin: 0 0 1.25rem;
+}
+
+.login__brand-title {
+  font-family: var(--font-display);
+  font-size: clamp(5.5rem, 12vw, 10rem);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 0.88;
+  color: var(--paper);
+  margin: 0 0 0.35rem;
+}
+
+.login__brand-subtitle {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(242, 236, 224, 0.38);
+  margin: 0 0 2rem;
+}
+
+.login__brand-tagline {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: rgba(242, 236, 224, 0.36);
+  max-width: 24ch;
+  margin: 0;
+}
+
+/* ── Form panel (right, cream) ──────────────────────────────────────────────── */
+
+.login__form-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse 800px 520px at 100% -10%, rgba(31, 157, 124, 0.10), transparent 60%),
+    radial-gradient(ellipse 640px 420px at -10% 100%, rgba(255, 106, 69, 0.08), transparent 60%);
+  background-repeat: no-repeat;
+  padding: clamp(2rem, 5vw, 3.5rem) clamp(1.75rem, 5vw, 3.5rem);
+  overflow-y: auto;
+  animation: rise-in 0.6s 0.05s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login__form-inner {
+  width: 100%;
+  max-width: 24rem;
+}
+
+/* ── Card (elevated surface) ────────────────────────────────────────────────── */
+
+.login__card {
+  width: 100%;
+  box-sizing: border-box;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: clamp(1.75rem, 5vw, 2.5rem);
+  box-shadow:
+    0 1px 2px rgba(26, 29, 33, 0.04),
+    0 16px 40px rgba(26, 29, 33, 0.10);
+  animation: rise-in 0.5s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Form header ────────────────────────────────────────────────────────────── */
+
+.login__form-header {
+  margin-bottom: 1.5rem;
+  animation: rise-in 0.45s 0.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login__form-eyebrow {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--steel-deep);
+}
+
+.login__form-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.75rem, 3.5vw, 2.4rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--ink);
+}
+
+/* ── Hint text ──────────────────────────────────────────────────────────────── */
+
+.login-hint {
+  margin: 0 0 1.65rem;
+  font-size: 0.8125rem;
+  line-height: 1.58;
+  color: var(--ink-faint);
+}
+
+/* ── Form fields ────────────────────────────────────────────────────────────── */
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  animation: rise-in 0.45s 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.login-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.login-label-hint {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-faint);
+}
+
+.login-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--paper-deep);
+  border: 1.5px solid var(--paper-line);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.login-input:focus {
+  border-color: var(--steel);
+  box-shadow: 0 0 0 3px rgba(31, 157, 124, 0.14);
+}
+
+.login-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.login-select {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--paper-deep);
+  border: 1.5px solid var(--paper-line);
+  border-radius: 10px;
+  padding: 0.8rem 2.5rem 0.8rem 1rem;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231a1d21' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-select:focus {
+  border-color: var(--steel);
+  box-shadow: 0 0 0 3px rgba(31, 157, 124, 0.14);
+}
+
+.login-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Mobile number row — the row itself owns the unified rounded border;
+   prefix/input/button are borderless segments divided by hairlines, so
+   there's no per-segment radius to coordinate and nothing can desync
+   into a gap when the Send OTP button is conditionally rendered. */
+.login-mobile-row {
+  display: flex;
+  align-items: stretch;
+  background: var(--paper-deep);
+  border: 1.5px solid var(--paper-line);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-mobile-row:focus-within {
+  border-color: var(--steel);
+  box-shadow: 0 0 0 3px rgba(31, 157, 124, 0.14);
+}
+
+.login-mobile-prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--ink-faint);
+  border-right: 1.5px solid var(--paper-line);
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.login-input--mobile,
+.login-input--mobile-end {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.login-mobile-row .login-input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.login-btn-send-otp {
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--steel-deep);
+  background: transparent;
+  border: none;
+  border-left: 1.5px solid var(--steel);
+  padding: 0 1.1rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.login-btn-send-otp:hover:not(:disabled) {
+  background: var(--steel);
+  color: #ffffff;
+}
+
+.login-btn-send-otp:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── OTP section ────────────────────────────────────────────────────────────── */
+
+.otp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  animation: rise-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.otp-dev-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  background: #fefce8;
+  border: 1.5px dashed #ca8a04;
+  border-radius: 8px;
+  animation: rise-in 0.25s ease both;
+}
+
+.otp-dev-banner__label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #92400e;
+  background: #fde68a;
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.otp-dev-banner__code {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: #92400e;
+  flex: 1;
+}
+
+.otp-dev-banner__dismiss {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #a16207;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.otp-input {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.otp-input__box {
+  flex: 1;
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper-deep);
+  border: 1.5px solid var(--paper-line);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  caret-color: var(--steel);
+  /* hide browser spinners */
+  -moz-appearance: textfield;
+}
+
+.otp-input__box::-webkit-outer-spin-button,
+.otp-input__box::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.otp-input__box:focus {
+  border-color: var(--steel);
+  box-shadow: 0 0 0 3px rgba(31, 157, 124, 0.14);
+}
+
+.otp-input__box--filled {
+  background: rgba(31, 157, 124, 0.08);
+  border-color: rgba(31, 157, 124, 0.35);
+}
+
+.otp-resend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.otp-countdown {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.otp-resend-btn {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--steel);
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--steel);
+  cursor: pointer;
+  padding: 0.1rem 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.otp-resend-btn:hover {
+  color: var(--steel-deep);
+  border-color: var(--steel-deep);
+}
+
+.otp-change-btn {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  border-bottom: 1px dashed var(--ink-faint);
+  cursor: pointer;
+  padding: 0.1rem 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.otp-change-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+/* ── Password row ───────────────────────────────────────────────────────────── */
+
+.login-password-row {
+  position: relative;
+  display: flex;
+}
+
+.login-password-row .login-input {
+  padding-right: 2.85rem;
+  border-radius: 10px;
+}
+
+.login-eye {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.login-eye:hover {
+  color: var(--steel-deep);
+}
+
+.login-forgot {
+  align-self: flex-end;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+  text-decoration: none;
+  margin-top: 0.15rem;
+  transition: color 0.15s ease;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.login-forgot:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* ── Error banner ───────────────────────────────────────────────────────────── */
+
+.login-error {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--signal-deep);
+  background: rgba(224, 80, 46, 0.08);
+  border: 1px solid rgba(224, 80, 46, 0.18);
+  border-radius: 10px;
+  animation: rise-in 0.22s ease both;
+}
+
+/* ── Primary action button ──────────────────────────────────────────────────── */
+
+.login-btn-primary {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--signal);
+  border: 1.5px solid var(--signal);
+  border-radius: 999px;
+  padding: 0.9rem 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(255, 106, 69, 0.32);
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 0.3rem;
+}
+
+.login-btn-primary:hover:not(:disabled) {
+  background: var(--signal-deep);
+  border-color: var(--signal-deep);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(255, 106, 69, 0.38);
+}
+
+.login-btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.login-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  /* not enough width for the two-column layout — collapse the brand panel
+     into a compact top banner (logo + wordmark lockup) instead of dropping
+     it, with a clear gap above the card below, so the mobile page still
+     carries the same brand identity as desktop without the two surfaces
+     running into each other. */
+  .login {
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  .login__brand {
+    flex: 0 0 auto;
+    width: 100%;
+    padding-bottom: 1.75rem;
+    animation-duration: 0.5s;
+  }
+
+  /* the desktop watermark's top/right offsets are percentages of a tall
+     panel — on this short banner the same percentages push it almost
+     entirely out of view, so pin it with fixed offsets sized for the
+     banner instead (image is a 512x512 square, so width alone keeps it
+     proportional). */
+  .login__brand-watermark {
+    width: 190px;
+    top: -25px;
+    right: -35px;
+  }
+
+  .login__brand-inner {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 0.85rem;
+    padding: 1.75rem 1.75rem 0;
+  }
+
+  .login__brand-mark {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    height: 38px;
+    margin: 0;
+  }
+
+  .login__brand-eyebrow {
+    grid-row: 1;
+    grid-column: 2;
+    margin: 0 0 0.2rem;
+  }
+
+  .login__brand-title {
+    grid-row: 2;
+    grid-column: 2;
+    font-size: 2.25rem;
+    line-height: 1;
+    margin: 0;
+  }
+
+  /* desktop-only flourishes that don't fit the compact banner */
+  .login__brand-rule,
+  .login__brand-subtitle,
+  .login__brand-tagline {
+    display: none;
+  }
+
+  .login__form-panel {
+    flex: 1;
+    width: 100%;
+    align-items: flex-start;
+    padding-top: 1.75rem;
+  }
+
+  .login__form-inner {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .login__card {
+    padding: 1.5rem 1.25rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .login__brand-inner {
+    padding: 1.5rem 1.5rem 0;
+  }
+
+  .login__brand-mark {
+    height: 32px;
+  }
+
+  .login__brand-title {
+    font-size: 1.85rem;
+  }
+
+  .login__card {
+    padding: 1.25rem 1rem;
+    border-radius: 16px;
+  }
+
+  .login__form-panel {
+    padding-top: 1.25rem;
+  }
+
+  .login-mobile-row {
+    flex-wrap: wrap;
+  }
+
+  /* wrapped onto its own line, the send-otp control needs real button
+     weight (filled, high-contrast) — the inline border-left treatment
+     reads as a stray text label rather than a tappable action at this
+     width, especially at low text/background contrast. */
+  .login-btn-send-otp {
+    flex: 1 1 100%;
+    border-left: none;
+    border-top: 1.5px solid var(--paper-line);
+    background: var(--steel);
+    color: #ffffff;
+    font-weight: 700;
+    text-align: center;
+    padding: 0.85rem 1.1rem;
+  }
+
+  .login-btn-send-otp:hover:not(:disabled) {
+    background: var(--steel-deep);
+  }
+
+  .otp-input {
+    gap: 0.3rem;
+  }
+
+  .otp-input__box {
+    font-size: 1.1rem;
+  }
+
+  .login__brand-eyebrow,
+  .login__form-eyebrow {
+    font-size: 0.625rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .login__form-panel {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .login__brand-inner {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .login__brand-title {
+    font-size: 1.6rem;
+  }
+
+  .otp-input {
+    gap: 0.25rem;
+  }
+}
+
+/* ── Password strength rules list ───────────────────────────────────────────── */
+
+.login-pwd-rules {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.login-pwd-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  transition: color 0.15s ease;
+}
+
+.login-pwd-rule--ok {
+  color: var(--ok, #3fae6b);
+}
+
+.login-pwd-rule-icon {
+  font-size: 0.7rem;
+  width: 0.9rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Change-password hint ────────────────────────────────────────────────────── */
+
+.login-change-pwd-hint {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  padding: 0.65rem 0.9rem;
+  background: rgba(31, 157, 124, 0.28);
+  border: 1px solid rgba(31, 157, 124, 0.18);
+  border-radius: 10px;
+}
+
+/* ── Forgot-password flow ────────────────────────────────────────────────────── */
+
+.login-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+  color: var(--steel);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.login-back-btn:hover {
+  color: var(--steel-deep);
+}
+
+.login-resend-btn {
+  align-self: flex-start;
+  padding: 0;
+  margin-top: -0.25rem;
+  font-size: 0.8rem;
+  font-family: var(--font-body);
+  color: var(--steel);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.15s;
+}
+
+.login-resend-btn:hover:not(:disabled) {
+  color: var(--steel-deep);
+}
+
+.login-resend-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

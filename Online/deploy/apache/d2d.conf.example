@@ -1,0 +1,34 @@
+# Apache vhost template for the D2D portal — same pattern as Demo PG:
+#   - Apache is a thin reverse proxy that forwards ALL traffic to Express
+#   - Express serves every API route under /api, the unprefixed /health
+#     check, AND the built frontend static files from frontend/dist — no
+#     DocumentRoot needed
+#
+# This template assumes frontend and backend share one origin. If the
+# frontend is instead hosted separately (its own static host / CDN, or a
+# different domain/subdomain), point that host's VITE_API_URL at this
+# vhost's origin directly and skip the frontend/dist static-serving parts
+# of this config — this vhost only needs to proxy to Express.
+#
+# Copy to /etc/apache2/sites-available/d2d.conf, edit the placeholders
+# (yourdomain.com), then:
+#   a2enmod proxy proxy_http
+#   a2ensite d2d.conf
+#   apachectl configtest && systemctl reload apache2
+#
+# For TLS, run `certbot --apache -d yourdomain.com` after the HTTP vhost
+# below is working — certbot will add the :443 vhost and the http->https
+# redirect for you.
+
+<VirtualHost *:80>
+    ServerName yourdomain.com
+
+    # Forward all traffic to Express — it handles API, uploads, and the
+    # React SPA catch-all itself (same pattern as Demo PG)
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:3001/
+    ProxyPassReverse / http://127.0.0.1:3001/
+
+    ErrorLog ${APACHE_LOG_DIR}/d2d-error.log
+    CustomLog ${APACHE_LOG_DIR}/d2d-access.log combined
+</VirtualHost>
