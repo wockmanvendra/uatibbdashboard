@@ -33,16 +33,16 @@ export function UnavailableChart({
   height: number;
 }) {
   return (
-    <section className="card flex min-w-0 flex-col">
-      <header className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="panel-title truncate text-ink-3">{title}</h2>
+    <section className="xl-chart">
+      <h2 className="xl-chart-title">{title}</h2>
+      <div className="absolute right-2 top-2">
         <NoSourceBadge />
-      </header>
+      </div>
       <div
-        className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-rule bg-[var(--table-zebra)] px-6 text-center"
+        className="mt-1 flex flex-1 items-center justify-center border border-dashed border-[var(--xl-grid)] bg-[var(--xl-zebra)] px-6 text-center"
         style={{ minHeight: height }}
       >
-        <p className="max-w-sm text-[12px] leading-relaxed text-ink-3">{reason}</p>
+        <p className="max-w-sm text-[12px] leading-relaxed text-[var(--xl-muted)]">{reason}</p>
       </div>
     </section>
   );

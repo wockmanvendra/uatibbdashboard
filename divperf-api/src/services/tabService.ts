@@ -12,7 +12,7 @@ import type { CacheClient } from '../cache/CacheClient.js';
 import { ttlFor } from '../cache/CacheClient.js';
 import { tabKey, type CanonicalFilters } from '../cache/key.js';
 import type { Scope } from '../plugins/scope.js';
-import { intersectScope } from '../plugins/scope.js';
+import { intersectScope, permittedFor } from '../plugins/scope.js';
 import { getTab, type TabConfig } from '../tabs/registry.js';
 import { notFound } from '../lib/errors.js';
 import { config } from '../config.js';
@@ -86,14 +86,17 @@ export async function getTabData(
 }
 
 function applyScope(req: TabRequest, scope: Scope): TabRequest {
-  if (scope.level === 'ALL') return req;
-  const key = ({ DIVISION: 'division', ZONE: 'zone', REGION: 'region', HQ: 'hq' } as const)[
-    scope.level
-  ];
-  const narrowed = intersectScope(req[key], scope.nodes);
-  // Asking only for nodes outside scope yields the user's own scope. Never pass
-  // an empty list on: every loader reads [] as "no filter", i.e. everything.
-  return { ...req, [key]: narrowed.length ? narrowed : scope.nodes };
+  let out = req;
+  // The scope's own level, and the user's divisions beside it.
+  for (const key of ['division', 'zone', 'region', 'hq'] as const) {
+    const permitted = permittedFor(key, scope);
+    if (permitted === null) continue;
+    const narrowed = intersectScope(out[key], permitted);
+    // Asking only for nodes outside scope yields the user's own scope. Never pass
+    // an empty list on: every loader reads [] as "no filter", i.e. everything.
+    out = { ...out, [key]: narrowed.length ? narrowed : permitted };
+  }
+  return out;
 }
 
 /** The one place that decides mock vs real. */

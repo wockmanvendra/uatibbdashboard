@@ -4,6 +4,10 @@
  * Reads the tab config, calls useDashTab ONCE, and renders the listed panels.
  * There is no page component per tab and there must never be one — four
  * hand-written pages is how the layout drifts between tabs.
+ *
+ * The layout follows the "Division Performance: Sales Dashboard" Excel report:
+ * KPI tiles, the two summary tables, Key Brands, credit notes beside attrition,
+ * then the SALES TRENDS and BRAND MIX sections.
  */
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -12,15 +16,18 @@ import { useDashTab } from '../queries/useDashTab';
 import { usePrefetchMonths } from '../queries/usePrefetch';
 import { DEFAULT_TAB, getTabByPath } from './registry';
 import { ApiRequestError } from '../lib/api';
+import type { KeyBrandRow } from '../types/api';
 
-import { KpiBand } from '../components/panels/KpiBand';
+import { KpiStrip } from '../components/panels/KpiStrip';
+import { ManpowerAttrition, PrimaryPerformance, SecondaryPcpmRcpa } from '../components/panels/SummaryTables';
 import { KeyBrandsTable } from '../components/panels/KeyBrandsTable';
 import { GeoTable } from '../components/panels/GeoTable';
 import { CreditNoteCard } from '../components/panels/CreditNotePanel';
 import { CnDetailPanels } from '../components/panels/CnDetail';
 import { TrendCombo } from '../components/charts/TrendCombo';
-import { MixPanelCard } from '../components/charts/MixPanel';
-import { SERIES, CHART_HEIGHT } from '../components/charts/chartTheme';
+import { BrandMix } from '../components/charts/BrandMix';
+import { CHART_HEIGHT, XL } from '../components/charts/chartTheme';
+import { SectionBar } from '../components/ui/Panel';
 import { ChartSkeleton, ErrorState, LoadingIndicator, RefetchBar } from '../components/ui/States';
 import { UnavailableChart } from '../components/ui/NoSource';
 import { DashboardFooter } from '../components/ui/DashboardFooter';
@@ -71,173 +78,223 @@ export function TabPage() {
   const trends = data?.trends;
   const labels = trends?.labels ?? [];
   const noPriorYear = !!data && data.meta.priorFrom === null;
+  // The performance tabs carry the KPI strip; the Credit note tab does not.
+  const performance = has('primary');
+
+  // The Key Brands Total row is the server's totals, never a client-side sum.
+  // Collection has no brand split, so it stays blank here as it does per brand.
+  const brandTotal: KeyBrandRow | undefined = data?.primary
+    ? [
+        'Total',
+        data.primary.target.value,
+        data.primary.dispatch.value,
+        null,
+        null,
+        data.primary.dispatch.gr,
+        data.secondary?.value ?? null,
+        data.inventory?.value ?? null,
+        data.rcpa?.actual ?? null,
+      ]
+    : undefined;
 
   return (
     <div className="relative">
       <RefetchBar active={stale} />
       <LoadingIndicator state={firstLoad ? 'loading' : stale ? 'updating' : null} />
 
-      <div className="space-y-5 px-5 py-5">
-        {/* ---- KPI band ------------------------------------------------- */}
-        {has('primary') && (
-          <KpiBand
-            primary={data?.primary}
-            pcpm={data?.pcpm}
-            secondary={data?.secondary}
-            rcpa={data?.rcpa}
-            inventory={data?.inventory}
-            monthCount={data?.meta.monthCount ?? 1}
-            loading={firstLoad}
-            stale={stale}
-            noPriorYear={noPriorYear}
-          />
+      <div className="space-y-4 px-5 py-4">
+        {/* ---- KPI tiles and the two summary tables --------------------- */}
+        {performance && (
+          <>
+            <KpiStrip
+              primary={data?.primary}
+              secondary={data?.secondary}
+              pcpm={data?.pcpm}
+              loading={firstLoad}
+              stale={stale}
+            />
+            {noPriorYear && !firstLoad && (
+              <p className="-mt-2 text-[11px] text-[var(--xl-muted)]">
+                Growth shows — because the prior-year period has no data in the source. Totals for
+                the selected period are unaffected.
+              </p>
+            )}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <PrimaryPerformance primary={data?.primary} loading={firstLoad} stale={stale} />
+              <SecondaryPcpmRcpa
+                secondary={data?.secondary}
+                pcpm={data?.pcpm}
+                rcpa={data?.rcpa}
+                inventory={data?.inventory}
+                loading={firstLoad}
+                stale={stale}
+              />
+            </div>
+          </>
         )}
 
-        {/* ---- Grid: table on the left, CN card on the right ------------ */}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
-          {has('keyBrands') && (
-            <KeyBrandsTable data={data?.keyBrands} loading={firstLoad} stale={stale} />
-          )}
-          {has('geoTable') && <GeoTable data={data?.geoTable} loading={firstLoad} stale={stale} />}
-          {has('creditNote') && (
-            <CreditNoteCard cn={data?.creditNote} loading={firstLoad} stale={stale} />
-          )}
-        </div>
+        {/* ---- The main grid -------------------------------------------- */}
+        {has('keyBrands') && (
+          <KeyBrandsTable data={data?.keyBrands} total={brandTotal} loading={firstLoad} stale={stale} />
+        )}
+        {has('geoTable') && <GeoTable data={data?.geoTable} loading={firstLoad} stale={stale} />}
 
-        {/* ---- Credit Note tab detail grids ----------------------------- */}
+        {/* ---- Credit notes, with attrition beside them ----------------- */}
+        {has('creditNote') && (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <CreditNoteCard cn={data?.creditNote} loading={firstLoad} stale={stale} />
+            {performance && <ManpowerAttrition stale={stale} />}
+          </div>
+        )}
+
         {has('cnDetail') && (
           <CnDetailPanels data={data?.cnDetail} loading={firstLoad} stale={stale} />
         )}
 
-        {/* ---- The four trend charts ------------------------------------ */}
+        {/* ---- Sales trends --------------------------------------------- */}
         {has('trends') && (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {firstLoad || !trends ? (
-              <>
-                <ChartCardSkeleton />
-                <ChartCardSkeleton />
-                <ChartCardSkeleton />
-                <ChartCardSkeleton />
-              </>
-            ) : (
-              <>
-                {/* Only the series that actually have data become bars, so the
-                    chart is not padded out with empty legend entries. */}
-                {hasSeries(trends.disp) && (
-                  <TrendCombo
-                    title={
-                      hasSeries(trends.sec) || hasSeries(trends.rcpa)
-                        ? 'Disp, Sec, RCPA, PCPM'
-                        : 'Dispatch'
-                    }
-                    note={
-                      hasSeries(trends.sec) || hasSeries(trends.rcpa)
-                        ? undefined
-                        : 'Sec, RCPA and PCPM have no source in the warehouse.'
-                    }
-                    labels={labels}
-                    stale={stale}
-                    bars={[
-                      { name: 'Disp', data: trends.disp!, color: SERIES.disp },
-                      ...(hasSeries(trends.sec)
-                        ? [{ name: 'Sec', data: trends.sec!, color: SERIES.sec }]
-                        : []),
-                      ...(hasSeries(trends.rcpa)
-                        ? [{ name: 'RCPA', data: trends.rcpa!, color: SERIES.rcpa }]
-                        : []),
-                    ]}
-                    ratio={
-                      hasSeries(trends.pcpm)
-                        ? { name: 'PCPM', data: trends.pcpm!, isPercent: false }
-                        : undefined
-                    }
-                  />
-                )}
+          <>
+            <SectionBar title="Sales Trends" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {firstLoad || !trends ? (
+                Array.from({ length: performance ? 6 : 1 }, (_, i) => <ChartCardSkeleton key={i} />)
+              ) : (
+                <>
+                  {performance && (hasSeries(trends.tgt) || hasSeries(trends.disp)) && (
+                    <TrendCombo
+                      title="Tgt vs Disp vs Coll (₹ Lacs)"
+                      labels={labels}
+                      stale={stale}
+                      bars={[
+                        { name: 'Tgt', data: trends.tgt ?? [], color: XL.blue },
+                        { name: 'Disp', data: trends.disp ?? [], color: XL.red },
+                        { name: 'Coll', data: trends.coll ?? [], color: XL.green },
+                      ]}
+                    />
+                  )}
 
-                {hasSeries(trends.tgt) && (
-                  <TrendCombo
-                    title="Tgt vs. Disp vs. Coll"
-                    labels={labels}
-                    stale={stale}
-                    bars={[
-                      { name: 'Tgt', data: trends.tgt!, color: SERIES.tgt },
-                      { name: 'Disp', data: trends.disp ?? [], color: SERIES.disp },
-                      { name: 'Coll', data: trends.coll ?? [], color: SERIES.coll },
-                    ]}
-                  />
-                )}
+                  {performance && hasSeries(trends.tgt) && (
+                    <TrendCombo
+                      title="Target vs Ach% & Gr%"
+                      note={
+                        hasSeries(trends.grPct)
+                          ? undefined
+                          : 'Gr% needs a year of prior sales, which the source does not have yet.'
+                      }
+                      labels={labels}
+                      stale={stale}
+                      bars={[{ name: 'Tgt', data: trends.tgt!, color: XL.blue }]}
+                      lines={[
+                        ...(hasSeries(trends.achPct)
+                          ? [{ name: 'Ach%', data: trends.achPct!, color: XL.red, isPercent: true }]
+                          : []),
+                        ...(hasSeries(trends.grPct)
+                          ? [{ name: 'Gr%', data: trends.grPct!, color: XL.green, isPercent: true }]
+                          : []),
+                      ]}
+                    />
+                  )}
 
-                {/* A chart with no feed keeps its slot and says why, rather than
-                    vanishing and leaving a hole in the grid. */}
-                {hasSeries(trends.rcpaPlan) ? (
-                  <TrendCombo
-                    title="RCPA plan vs. actual"
-                    labels={labels}
-                    stale={stale}
-                    bars={[
-                      { name: 'RCPA plan', data: trends.rcpaPlan!, color: SERIES.tgt },
-                      { name: 'RCPA actual', data: trends.rcpaActual ?? [], color: SERIES.rcpa },
-                    ]}
-                    ratio={
-                      hasSeries(trends.valuePerDr)
-                        ? { name: 'Value / Dr.', data: trends.valuePerDr!, isPercent: false }
-                        : undefined
-                    }
-                  />
-                ) : (
-                  <UnavailableChart
-                    title="RCPA plan vs. actual"
-                    reason={reasonFor(data, 'rcpa') ?? 'No RCPA feed in the warehouse.'}
-                    height={CHART_HEIGHT.trend}
-                  />
-                )}
+                  {/* Only the series that have data become bars, so the chart
+                      is not padded out with empty legend entries. */}
+                  {performance && hasSeries(trends.disp) && (
+                    <TrendCombo
+                      title="Disp, Sec, RCPA | PCPM"
+                      labels={labels}
+                      stale={stale}
+                      bars={[
+                        { name: 'Disp', data: trends.disp!, color: XL.blue },
+                        ...(hasSeries(trends.sec) ? [{ name: 'Sec', data: trends.sec!, color: XL.red }] : []),
+                        ...(hasSeries(trends.rcpa) ? [{ name: 'RCPA', data: trends.rcpa!, color: XL.green }] : []),
+                      ]}
+                      lines={
+                        hasSeries(trends.pcpm)
+                          ? [{ name: 'PCPM', data: trends.pcpm!, color: XL.purple, isPercent: false }]
+                          : []
+                      }
+                    />
+                  )}
 
-                {hasSeries(trends.cnExp) ? (
-                  <TrendCombo
-                    title="Credit note"
-                    labels={labels}
-                    stale={stale}
-                    bars={[
-                      { name: 'Exp CN', data: trends.cnExp!, color: SERIES.cnExp, stack: 'cn' },
-                      { name: 'SRCN', data: trends.cnSr ?? [], color: SERIES.cnSr, stack: 'cn' },
-                      { name: 'PD CN', data: trends.cnPd ?? [], color: SERIES.cnPd, stack: 'cn' },
-                    ]}
-                    ratio={
-                      hasSeries(trends.cnPct)
-                        ? { name: 'CN%', data: trends.cnPct!, isPercent: true }
-                        : undefined
-                    }
-                  />
-                ) : hasSeries(trends.cnPct) ? (
-                  // The split is missing but the ratio is real, so plot that
-                  // rather than dropping credit notes from the tab entirely.
-                  <TrendCombo
-                    title="Credit note %"
-                    note="Exp CN / SRCN / PD CN split is not in the warehouse; total CN% shown."
-                    labels={labels}
-                    stale={stale}
-                    bars={[]}
-                    ratio={{ name: 'CN%', data: trends.cnPct!, isPercent: true }}
-                  />
-                ) : (
-                  <UnavailableChart
-                    title="Credit note"
-                    reason={reasonFor(data, 'creditNote.split') ?? 'No credit-note split feed.'}
-                    height={CHART_HEIGHT.trend}
-                  />
-                )}
-              </>
-            )}
-          </div>
+                  {/* A chart with no feed keeps its slot and says why, rather
+                      than vanishing and leaving a hole in the grid. */}
+                  {hasSeries(trends.cnExp) ? (
+                    <TrendCombo
+                      title="Credit Notes — Exp / SRCN / PD"
+                      labels={labels}
+                      stale={stale}
+                      bars={[
+                        { name: 'Exp CN', data: trends.cnExp!, color: XL.blue, stack: 'cn' },
+                        { name: 'SRCN', data: trends.cnSr ?? [], color: XL.red, stack: 'cn' },
+                        { name: 'PD CN', data: trends.cnPd ?? [], color: XL.green, stack: 'cn' },
+                      ]}
+                      lines={
+                        hasSeries(trends.cnPct)
+                          ? [{ name: 'CN%', data: trends.cnPct!, color: XL.purple, isPercent: true }]
+                          : []
+                      }
+                    />
+                  ) : hasSeries(trends.cnPct) ? (
+                    // The split is missing but the ratio is real, so plot that
+                    // rather than dropping credit notes from the tab entirely.
+                    <TrendCombo
+                      title="Credit Notes — CN%"
+                      note="The Exp / SRCN / PD split has no source yet; total CN% shown."
+                      labels={labels}
+                      stale={stale}
+                      bars={[]}
+                      lines={[{ name: 'CN%', data: trends.cnPct!, color: XL.purple, isPercent: true }]}
+                    />
+                  ) : (
+                    <UnavailableChart
+                      title="Credit Notes — Exp / SRCN / PD"
+                      reason={reasonFor(data, 'creditNote.split') ?? 'No credit-note split feed.'}
+                      height={CHART_HEIGHT.trend}
+                    />
+                  )}
+
+                  {performance &&
+                    (hasSeries(trends.rcpaPlan) ? (
+                      <TrendCombo
+                        title="RCPA Plan vs Actual | Value/Dr."
+                        labels={labels}
+                        stale={stale}
+                        bars={[
+                          { name: 'RCPA Plan', data: trends.rcpaPlan!, color: XL.blue },
+                          { name: 'RCPA Actual', data: trends.rcpaActual ?? [], color: XL.red },
+                        ]}
+                        lines={
+                          hasSeries(trends.valuePerDr)
+                            ? [{ name: 'Value / Dr.', data: trends.valuePerDr!, color: XL.green, isPercent: false }]
+                            : []
+                        }
+                      />
+                    ) : (
+                      <UnavailableChart
+                        title="RCPA Plan vs Actual | Value/Dr."
+                        reason={reasonFor(data, 'rcpa') ?? 'No RCPA plan source yet.'}
+                        height={CHART_HEIGHT.trend}
+                      />
+                    ))}
+
+                  {performance && (
+                    <UnavailableChart
+                      title="Attrition — TMs / RMs / ZSMs"
+                      reason="No attrition source yet. Leavers by cadre will chart here once a field-force feed is connected."
+                      height={CHART_HEIGHT.trend}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </>
         )}
 
-        {/* ---- Mix donuts ----------------------------------------------- */}
+        {/* ---- Brand mix ------------------------------------------------ */}
         {has('mix') && data?.mix && (
-          <MixPanelCard
-            mix={data.mix}
-            stale={stale}
-            note={reasonFor(data, 'mix.coll')}
-          />
+          <>
+            <SectionBar title="Brand Mix" />
+            <BrandMix mix={data.mix} stale={stale} collNote={reasonFor(data, 'mix.coll')} />
+          </>
         )}
 
         <DashboardFooter meta={data?.meta} periodLabel={periodLabel} />
@@ -253,8 +310,8 @@ export function TabPage() {
 
 function ChartCardSkeleton() {
   return (
-    <div className="card">
-      <div className="mb-2 h-4 w-40 skeleton" />
+    <div className="xl-chart">
+      <div className="mx-auto mb-2 h-4 w-40 skeleton" />
       <ChartSkeleton height={CHART_HEIGHT.trend} />
     </div>
   );

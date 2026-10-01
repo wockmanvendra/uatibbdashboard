@@ -33,9 +33,9 @@ export function Spinner({ size = 16, className = '' }: { size?: number; classNam
 const SLOW_MS = 4000;
 
 /**
- * The dashboard's loading pill. Floats at the bottom centre of the viewport, so
- * it stays in view while the page scrolls, covers no header or title, and never
- * blocks a click.
+ * The dashboard's loader. Sits in the middle of the viewport, so it stays in
+ * view wherever the page is scrolled. It never blocks a click: filters can be
+ * changed while a slow query is still running.
  */
 export function LoadingIndicator({ state }: { state: 'loading' | 'updating' | null }) {
   const [slow, setSlow] = useState(false);
@@ -49,14 +49,14 @@ export function LoadingIndicator({ state }: { state: 'loading' | 'updating' | nu
 
   if (!state) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-      <div role="status" aria-live="polite" className="loading-pill rise-in">
-        <Spinner size={16} className="text-[var(--series-disp)]" />
-        <span className="font-medium text-ink">
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div role="status" aria-live="polite" className="loading-card fade-in">
+        <Spinner size={32} className="text-[var(--xl-title)]" />
+        <span className="text-[14px] font-semibold text-[var(--xl-text)]">
           {state === 'loading' ? 'Loading dashboard…' : 'Updating…'}
         </span>
         {slow && (
-          <span className="hidden text-ink-3 sm:inline">
+          <span className="max-w-[240px] text-[12px] text-[var(--xl-muted)]">
             Fetching from the warehouse — this can take a few seconds.
           </span>
         )}

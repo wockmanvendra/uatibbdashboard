@@ -250,6 +250,24 @@ describe('scope comes from the field structure (§6.2)', () => {
     expect(body.hqs.map((h) => h.code)).toEqual(['M2HYDP']);
   });
 
+  it('offers a TM only their own division, and only its brands', async () => {
+    const { token } = await signIn(TM);
+    const body = (await getAs(token, '/api/meta/filters')).json<FiltersResponse>();
+    expect(body.divisions.map((d) => d.code)).toEqual(['78']);
+    expect(body.brands.length).toBeGreaterThan(0);
+    expect(body.brands.map((b) => b.code)).not.toContain('WOSULIN'); // a DIABETES (85) brand
+    expect(body.zones.map((z) => z.code)).toEqual(['JH']);
+  });
+
+  it('answers a request for another division with the user’s own figures', async () => {
+    for (const who of [TM, ZSM]) {
+      const { token } = await signIn(who);
+      const own = (await getAs(token, TAB_URL)).json<TabResponse>();
+      const other = (await getAs(token, `${TAB_URL}&division=85`)).json<TabResponse>();
+      expect(other.primary!.dispatch.value).toBe(own.primary!.dispatch.value);
+    }
+  });
+
   it('gives a zonal manager their zone', async () => {
     const { user } = await signIn(ZSM);
     expect(user).toMatchObject({ role: 'zsm', effectiveScope: { level: 'ZONE', nodes: ['JH'] } });

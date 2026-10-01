@@ -72,6 +72,32 @@
   /* The pinned Total row sits over rows scrolling beneath it. */
   --shadow-total: 0 -6px 10px -8px color-mix(in srgb, var(--ink) 35%, transparent);
 
+  /*
+   * The dashboard theme — the "Division Performance: Sales Dashboard" Excel
+   * report: a blue title bar, navy panel and table headers, teal section bars,
+   * and colour-topped KPI tiles.
+   */
+  --xl-title: #1b9ad6;
+  --xl-navy: #1f3864;
+  --xl-teal: #134f5c;
+  --xl-filter: #e6edf5;
+  --xl-field: #5b93bb;
+  --xl-grid: #d5dee9;
+  --xl-zebra: #f1f5fb;
+  --xl-hover: #e2ecf7;
+  --xl-page: #f3f5f8;
+  --xl-text: #1f2d3d;
+  --xl-muted: #6b7a8c;
+  --xl-label: #44546a;
+  /* KPI tile top bars, left to right. */
+  --kpi-target: #1f3864;
+  --kpi-dispatch: #1f9aa8;
+  --kpi-coll: #2b9e8e;
+  --kpi-ach: #f29546;
+  --kpi-growth: #27a08a;
+  --kpi-sec: #6c5cb5;
+  --kpi-pcpm: #1f3864;
+
   /* Density toggle. Compact fits the whole tab on one screen. (§9.3) */
   --pad-card: 16px;
   --row-h: 34px;
@@ -120,68 +146,213 @@
 }
 
 @layer components {
-  /*
-   * Cards: a hairline edge plus a soft, low shadow — kept faint so a grid of
-   * fourteen cards reads as surfaces, not noise. (§9.3)
-   */
-  .card {
-    @apply rounded-card bg-surface;
-    --card-accent: var(--series-disp);
-    border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
-    box-shadow: var(--shadow-card);
-    padding: var(--pad-card);
-    transition: box-shadow 0.2s ease;
+  /* ── Dashboard theme (the Excel report) ─────────────────────────────── */
+
+  .xl {
+    background: var(--xl-page);
+    color: var(--xl-text);
+    font-family: 'Segoe UI', Calibri, 'Helvetica Neue', Arial, sans-serif;
   }
 
-  .card:hover {
-    box-shadow: var(--shadow-card-hover);
+  .xl-titlebar {
+    background: var(--xl-title);
+    color: #fff;
   }
 
-  /* KPI cards: a coloured top edge and a faint wash of the same colour. */
-  .card-accent {
-    border-top: 3px solid var(--card-accent);
-    background-image: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--card-accent) 7%, var(--surface)) 0,
-      var(--surface) 64px
-    );
+  /* Filter panel and its fields. */
+  .xl-filters {
+    background: var(--xl-filter);
+    border-bottom: 1px solid var(--xl-grid);
   }
 
-  .panel-title {
-    @apply text-panel text-ink;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .xl-label {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--xl-label);
   }
 
-  /* A short bar in the card's accent marks every panel title. */
-  .panel-title::before {
-    content: '';
-    flex: none;
-    width: 3px;
-    height: 14px;
+  .xl-field {
+    height: 28px;
+    border: 1px solid var(--xl-field);
     border-radius: 2px;
-    background: var(--card-accent);
+    background: #fff;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--xl-text);
   }
 
-  /* The KPI cards already carry the accent on their top edge. */
-  .card-accent .panel-title::before {
-    display: none;
+  .xl-field:disabled {
+    cursor: not-allowed;
+    background: #f5f7fa;
+    color: var(--xl-muted);
   }
 
-  /* Small secondary actions in card headers: Export, Table/Chart. */
-  .btn-ghost {
-    @apply rounded-md px-2.5 py-1 text-[11px] font-medium text-ink-2;
-    border: 1px solid var(--rule);
-    background: var(--surface);
-    box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 4%, transparent);
-    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  /* Full-width dark band that opens a section: SALES TRENDS, BRAND MIX. */
+  .xl-section-bar {
+    background: var(--xl-teal);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 7px 12px;
   }
 
-  .btn-ghost:hover {
-    background: var(--table-hover);
-    border-color: color-mix(in srgb, var(--series-disp) 30%, var(--rule));
-    color: var(--series-disp);
+  /* A titled panel: dark header bar over a white body. */
+  .xl-panel {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid var(--xl-grid);
+    box-shadow: 0 1px 2px rgba(31, 56, 100, 0.06);
+  }
+
+  .xl-panel-head {
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--xl-navy);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .xl-panel-head.teal {
+    background: var(--xl-teal);
+  }
+
+  /* Tables: navy header row, zebra rows, grid lines, bold first column. */
+  .xl-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+
+  .xl-table thead th {
+    padding: 7px 10px;
+    background: var(--xl-navy);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .xl-table tbody tr {
+    background: #fff;
+  }
+
+  .xl-table tbody tr:nth-child(even) {
+    background: var(--xl-zebra);
+  }
+
+  .xl-table tbody tr:hover {
+    background: var(--xl-hover);
+  }
+
+  .xl-table tbody td,
+  .xl-table tbody th {
+    height: var(--row-h);
+    padding: 0 10px;
+    border-bottom: 1px solid var(--xl-grid);
+    color: var(--xl-text);
+  }
+
+  .xl-table tbody th {
+    font-weight: 700;
+  }
+
+  .xl-table tfoot td {
+    height: var(--row-h);
+    padding: 0 10px;
+    border-top: 2px solid var(--xl-navy);
+    background: #fff;
+    font-weight: 700;
+    color: var(--xl-text);
+  }
+
+  /* KPI tiles: a thick colour bar over a white tile. */
+  .xl-tile {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .xl-tile-bar {
+    height: 7px;
+    background: var(--tile);
+  }
+
+  .xl-tile-body {
+    flex: 1;
+    margin-top: 3px;
+    padding: 8px 10px 9px;
+    text-align: center;
+    background: #fff;
+    border: 1px solid var(--xl-grid);
+  }
+
+  /* Chart panels, Excel style: thin border, centred title. */
+  .xl-chart {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    padding: 10px 12px 8px;
+    background: #fff;
+    border: 1px solid var(--xl-grid);
+    box-shadow: 0 1px 2px rgba(31, 56, 100, 0.06);
+  }
+
+  .xl-chart-title {
+    padding: 0 56px;
+    text-align: center;
+    font-size: 14px;
+    color: #404040;
+  }
+
+  /* Small actions: on white, and on the dark panel headers. */
+  .xl-btn {
+    border: 1px solid var(--xl-grid);
+    border-radius: 2px;
+    background: #fff;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--xl-label);
+  }
+
+  .xl-btn:hover {
+    border-color: var(--xl-field);
+    color: var(--xl-navy);
+  }
+
+  .xl-btn-dark {
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 2px;
+    background: transparent;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #fff;
+  }
+
+  .xl-btn-dark:hover {
+    background: rgba(255, 255, 255, 0.14);
   }
 
   /* The top bar sits above the page, not on it. */
@@ -190,11 +361,14 @@
   }
 
   /* The floating "Loading… / Updating…" pill. */
-  .loading-pill {
-    @apply flex items-center gap-2.5 whitespace-nowrap rounded-full px-5 py-2.5 text-[13px];
-    background: color-mix(in srgb, var(--surface) 94%, transparent);
-    border: 1px solid color-mix(in srgb, var(--series-disp) 22%, var(--rule));
-    box-shadow: var(--shadow-card-hover);
+  /* The centred loader: spinner over its label, on a frosted white card. */
+  .loading-card {
+    @apply flex flex-col items-center gap-2.5 px-8 py-5 text-center;
+    min-width: 200px;
+    background: color-mix(in srgb, #fff 94%, transparent);
+    border: 1px solid var(--xl-grid);
+    border-top: 3px solid var(--xl-title);
+    box-shadow: 0 10px 30px rgba(31, 56, 100, 0.18), 0 2px 6px rgba(31, 56, 100, 0.08);
     backdrop-filter: blur(6px);
   }
 
@@ -255,6 +429,23 @@
     from {
       opacity: 0;
       transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The loader waits 150 ms before appearing, so a fast refetch does not
+     flash a card in the middle of the screen. */
+  .fade-in {
+    animation: fade-in 0.2s ease-out 0.15s both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
     }
     to {
       opacity: 1;

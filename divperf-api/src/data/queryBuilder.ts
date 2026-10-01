@@ -10,7 +10,7 @@
  * input anywhere in this file: filter values only ever reach SQL as `@p0`,
  * `@p1`, … placeholders whose names this module generates.
  */
-import type { Scope } from '../plugins/scope.js';
+import { permittedFor, type Scope } from '../plugins/scope.js';
 import { DIMENSION, MONTH_COL, code, codeOrUnassigned, type DimensionName } from './sqlFragments.js';
 import type { SqlParams } from './db.js';
 
@@ -37,14 +37,6 @@ const FILTER_COLUMN: Record<keyof Omit<PanelFilters, 'from' | 'to'>, string> = {
   zone: DIMENSION.zone.codeCol,
   region: DIMENSION.region.codeCol,
   hq: DIMENSION.hq.codeCol,
-};
-
-/** Which filter dimension each scope level constrains. */
-const SCOPE_DIMENSION: Record<Exclude<Scope['level'], 'ALL'>, keyof typeof FILTER_COLUMN> = {
-  DIVISION: 'division',
-  ZONE: 'zone',
-  REGION: 'region',
-  HQ: 'hq',
 };
 
 /**
@@ -101,22 +93,18 @@ export const monthRange = (from: string, to: string) => `${MONTH_COL} BETWEEN @$
 
 /**
  * Returns the values to constrain on, or null for "no constraint".
- * Applies the scope intersection for the dimension the scope is defined at.
+ * Intersects with what the scope permits on this dimension: the nodes at the
+ * scope's own level, and the user's divisions.
  */
 function narrow(
   key: keyof typeof FILTER_COLUMN,
   requested: string[],
   scope: Scope,
 ): string[] | null {
-  const scopedDimension = scope.level === 'ALL' ? null : SCOPE_DIMENSION[scope.level];
-
-  if (scopedDimension !== key) {
-    return requested.length ? requested : null;
-  }
-
-  // This is the dimension the user's scope is defined at.
-  if (requested.length === 0) return scope.nodes;
-  const allowed = new Set(scope.nodes);
+  const permitted = permittedFor(key, scope);
+  if (permitted === null) return requested.length ? requested : null;
+  if (requested.length === 0) return permitted;
+  const allowed = new Set(permitted);
   return requested.filter((r) => allowed.has(r));
 }
 

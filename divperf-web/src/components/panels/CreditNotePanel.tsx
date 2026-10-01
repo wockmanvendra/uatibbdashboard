@@ -3,9 +3,9 @@
  * each with a Value and a % column.
  */
 import type { CreditNotePanel as CnData } from '../../types/api';
-import { Card } from '../ui/Card';
+import { Panel } from '../ui/Panel';
 import { TableSkeleton } from '../ui/States';
-import { EM_DASH, money, moneyFull, percent } from '../../lib/format';
+import { EM_DASH, lakhs, moneyFull, percent } from '../../lib/format';
 
 const ROWS = [
   { label: 'Total CN', value: 'totalCn', pct: 'cnPct', emphasis: true },
@@ -25,22 +25,19 @@ export function CreditNoteCard({
   stale: boolean;
 }) {
   return (
-    <Card title="CN and O/S" stale={stale}>
+    <Panel title="Credit Notes & Outstanding" tone="teal" stale={stale}>
       {loading || !cn ? (
-        <TableSkeleton rows={5} />
+        <div className="p-3">
+          <TableSkeleton rows={5} />
+        </div>
       ) : (
-        <table className="w-full border-separate border-spacing-0 text-[13px] tnum">
+        <table className="xl-table tnum">
+          <caption className="sr-only">Credit notes and outstanding for the selected period</caption>
           <thead>
             <tr>
-              <th scope="col" className="rounded-l-md bg-[var(--table-head)] px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-                <span className="sr-only">Measure</span>
-              </th>
-              <th scope="col" className="bg-[var(--table-head)] px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-                Value
-              </th>
-              <th scope="col" className="rounded-r-md bg-[var(--table-head)] px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
-                %
-              </th>
+              <th scope="col" className="text-left">Head</th>
+              <th scope="col" className="text-right">Value (₹ L)</th>
+              <th scope="col" className="text-right">%</th>
             </tr>
           </thead>
           <tbody>
@@ -48,31 +45,21 @@ export function CreditNoteCard({
               const v = cn[r.value] as number | null;
               const p = cn[r.pct] as number | null;
               return (
-                <tr
-                  key={r.label}
-                  className={r.emphasis ? 'bg-[var(--table-total)]' : 'bg-surface'}
-                  style={{ height: 'var(--row-h)' }}
-                >
-                  <th
-                    scope="row"
-                    className={`border-b border-rule-soft text-left ${r.emphasis ? 'px-3 font-semibold text-ink' : 'pl-6 pr-3 font-normal text-ink-2'}`}
-                  >
+                <tr key={r.label}>
+                  <th scope="row" className={`text-left ${r.emphasis ? '' : 'pl-6 !font-semibold'}`}>
                     {r.label}
                   </th>
-                  <td
-                    className={`border-b border-rule-soft px-3 text-right ${r.emphasis ? 'font-semibold text-ink' : 'text-ink-2'}`}
-                    title={v === null ? undefined : moneyFull(v)}
-                  >
-                    {v === null ? EM_DASH : money(v)}
+                  <td className="text-right" title={v === null ? undefined : moneyFull(v)}>
+                    {v === null ? EM_DASH : lakhs(v, 1)}
                   </td>
-                  <td className="border-b border-rule-soft px-3 text-right text-ink-3">{p === null ? EM_DASH : percent(p)}</td>
+                  <td className="text-right">{p === null ? EM_DASH : percent(p)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       )}
-      <p className="mt-2 text-[11px] text-ink-3">% of gross sales for the selected period.</p>
-    </Card>
+      <p className="px-3 py-2 text-[11px] text-[var(--xl-muted)]">% of gross sales for the selected period.</p>
+    </Panel>
   );
 }

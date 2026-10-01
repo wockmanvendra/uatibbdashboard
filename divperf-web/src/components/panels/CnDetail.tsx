@@ -7,7 +7,7 @@
  * layer — the shape is real, the numbers are not.
  */
 import type { CnDetailPanel } from '../../types/api';
-import { Card } from '../ui/Card';
+import { Panel } from '../ui/Panel';
 import { TableSkeleton } from '../ui/States';
 import { DataTable, type ColumnSpec } from './DataTable';
 import { downloadCsv } from '../../lib/csv';
@@ -32,17 +32,18 @@ export function CnDetailPanels({
   stale: boolean;
 }) {
   const grid = (title: string, rows: CnDetailPanel['byStockist'], file: string) => (
-    <Card
+    <Panel
       title={title}
+      tone="teal"
       stale={stale}
-      aside={
+      actions={
         rows.length > 0 ? (
           <button
             type="button"
             onClick={() =>
               downloadCsv(file, COLUMNS.map((c) => c.label), rows.map((r) => COLUMNS.map((c) => r[c.index] ?? '')))
             }
-            className="btn-ghost"
+            className="xl-btn-dark"
           >
             Export
           </button>
@@ -50,18 +51,22 @@ export function CnDetailPanels({
       }
     >
       <DataTable columns={COLUMNS} rows={rows} caption={title} defaultSort={5} />
-    </Card>
+    </Panel>
   );
 
   if (loading || !data) {
     return (
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card title="Credit note by stockist">
-          <TableSkeleton rows={6} />
-        </Card>
-        <Card title="Credit note by SKU">
-          <TableSkeleton rows={6} />
-        </Card>
+        <Panel title="Credit note by stockist" tone="teal">
+          <div className="p-3">
+            <TableSkeleton rows={6} />
+          </div>
+        </Panel>
+        <Panel title="Credit note by SKU" tone="teal">
+          <div className="p-3">
+            <TableSkeleton rows={6} />
+          </div>
+        </Panel>
       </div>
     );
   }

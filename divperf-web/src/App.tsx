@@ -40,7 +40,7 @@ function Dashboard() {
   }, [density]);
 
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="xl min-h-screen">
       <a
         href="#main"
         className="sr-only-focusable absolute left-2 top-2 z-50 rounded bg-surface px-3 py-1.5 text-[12px]"
@@ -48,9 +48,11 @@ function Dashboard() {
         Skip to content
       </a>
 
-      <header className="flex items-center justify-between gap-4 border-b border-rule bg-surface px-5 py-2">
-        <h1 className="text-[15px] font-semibold text-ink">Division performance</h1>
-        <UserMenu />
+      <header className="xl-titlebar flex items-center justify-between gap-4 px-5 py-2.5">
+        <h1 className="text-[17px] font-bold uppercase tracking-[0.04em]">
+          Division Performance: Sales Dashboard
+        </h1>
+        <UserMenu tone="dark" />
       </header>
 
       <FilterBar />

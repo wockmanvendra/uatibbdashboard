@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { useAuthStore } from '../auth/authStore';
+import { useFilterStore } from '../store/filterStore';
 import type {
   TabResponse,
   VersionResponse,
@@ -37,17 +38,32 @@ const version: VersionResponse = {
   updatedAt: '2026-08-11T00:00:00Z',
 };
 
-const filters: FiltersResponse = {
-  divisions: [{ code: '78', name: 'MERIND' }],
-  zones: [{ code: 'JH', name: 'MER2 - HYDERABAD' }],
-  regions: [{ code: 'JHH', name: 'MER2 - HYDERABAD' }],
-  hqs: [{ code: 'M2HYDP', name: 'MER HYDERABAD POOL' }],
-  brands: [{ code: 'HAPID', name: 'HAPID' }],
-  months: [
-    { yrMn: 202604, label: 'Apr-26', isClosed: true },
-    { yrMn: 202608, label: 'Aug-26', isClosed: false },
-  ],
-};
+/**
+ * Answers /meta/filters as the API does: the brand and zone lists follow the
+ * chosen division, regions the zone, HQs the region.
+ */
+function filtersFor(url: string): FiltersResponse {
+  const q = new URL(url, 'http://test').searchParams;
+  const picked = (key: string, code: string) => q.getAll(key).length === 0 || q.getAll(key).includes(code);
+  const tree = [
+    { division: '78', brand: 'HAPID', zone: 'JH', zoneName: 'MER2 - HYDERABAD', region: 'JHH', hq: 'M2HYDP' },
+    { division: '85', brand: 'WOSULIN', zone: 'DZ', zoneName: 'DIAB - DELHI', region: 'DZ1', hq: 'D1DELH' },
+  ];
+  const underDivision = tree.filter((t) => picked('division', t.division));
+  const underZone = underDivision.filter((t) => picked('zone', t.zone));
+  const underRegion = underZone.filter((t) => picked('region', t.region));
+  return {
+    divisions: [{ code: '78', name: 'MERIND' }, { code: '85', name: 'DIABETES' }],
+    brands: underDivision.map((t) => ({ code: t.brand, name: t.brand })),
+    zones: underDivision.map((t) => ({ code: t.zone, name: t.zoneName })),
+    regions: underZone.map((t) => ({ code: t.region, name: t.region })),
+    hqs: underRegion.map((t) => ({ code: t.hq, name: t.hq })),
+    months: [
+      { yrMn: 202604, label: 'Apr-26', isClosed: true },
+      { yrMn: 202608, label: 'Aug-26', isClosed: false },
+    ],
+  };
+}
 
 function tab(overrides: Partial<TabResponse> = {}): TabResponse {
   return {
@@ -125,6 +141,7 @@ beforeEach(() => {
   verifyReply = { status: 200, body: session };
   apiReturnsOtp = true;
   localStorage.clear();
+  useFilterStore.getState().clearAll(); // the store outlives each render
   useAuthStore.setState({ token: session.token, user: session.user });
   vi.stubGlobal(
     'fetch',
@@ -147,7 +164,7 @@ beforeEach(() => {
           : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect OTP. 4 attempt(s) left.' } }, 401);
       }
       if (url.includes('/meta/version')) return json(version);
-      if (url.includes('/meta/filters')) return json(filters);
+      if (url.includes('/meta/filters')) return json(filtersFor(url));
       if (url.includes('/dashboard/')) {
         if (tabStatus !== 200) {
           return json({ error: { code: 'BAD_REQUEST', message: 'Period is 77 months.' } }, tabStatus);
@@ -158,6 +175,9 @@ beforeEach(() => {
     }),
   );
 });
+
+/** One KPI tile, found by its label. */
+const kpi = async (label: string) => screen.findByRole('group', { name: label });
 
 function renderApp(path = '/division') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -210,7 +230,7 @@ describe('sign-in', () => {
     typeOtp(DEV_OTP);
     fireEvent.click(screen.getByRole('button', { name: /verify/i }));
 
-    expect(await screen.findByText('1.75 Cr')).toBeInTheDocument();
+    expect(await within(await kpi('Collection (₹ L)')).findByText('175')).toBeInTheDocument();
     expect(screen.getByText('Amit Verma')).toBeInTheDocument();
     expect(screen.getByText(/Territory Manager · HQ M2HYDP/)).toBeInTheDocument();
     expect(useAuthStore.getState().token).toBe(session.token);
@@ -296,16 +316,20 @@ describe('Division performance tab', () => {
   it('shows a loading indicator until the data arrives', async () => {
     renderApp();
     expect(screen.getByRole('status')).toHaveTextContent('Loading dashboard…');
-    expect(await screen.findByText('1.75 Cr')).toBeInTheDocument();
+    expect(await within(await kpi('Collection (₹ L)')).findByText('175')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
   });
 
-  it('renders the KPI band with Indian-abbreviated money', async () => {
+  it('renders the KPI tiles in ₹ lakhs, with the exact rupees on hover', async () => {
     renderApp();
-    // 17,500,000 must read as "1.75 Cr", not "$17.5M" and not "1,75,00,000".
-    expect(await screen.findByText('1.75 Cr')).toBeInTheDocument();
-    expect(screen.getByText('2.00 Cr')).toBeInTheDocument();
-    expect(screen.getByText('1.92 Cr')).toBeInTheDocument();
+    // 17,500,000 reads "175" under a "(₹ L)" label — not "$17.5M", not "1,75,00,000".
+    const coll = await within(await kpi('Collection (₹ L)')).findByText('175');
+    expect(coll).toHaveAttribute('title', '₹1,75,00,000.00');
+    expect(await within(await kpi('Target (₹ L)')).findByText('200')).toBeInTheDocument();
+    expect(await within(await kpi('Dispatch (₹ L)')).findByText('192')).toBeInTheDocument();
+    // Below 100 L one decimal is kept: 10,00,000 of secondary is "100", 1,75,000 of PCPM "1.8".
+    expect(await within(await kpi('Secondary (₹ L)')).findByText('100')).toBeInTheDocument();
+    expect(await within(await kpi('PCPM (Coll) ₹ L')).findByText('1.8')).toBeInTheDocument();
   });
 
   it('exposes achievement on the gap ribbon accessibly', async () => {
@@ -328,9 +352,11 @@ describe('Division performance tab', () => {
     expect(screen.queryByText('0')).not.toBeInTheDocument();
   });
 
-  it('signs growth and explains a missing prior year', async () => {
+  it('marks growth direction and explains a missing prior year', async () => {
     renderApp();
-    expect(await screen.findByText('+12.3%')).toBeInTheDocument();
+    const growth = within(await kpi('Growth %'));
+    expect(await growth.findByText('12.3%')).toBeInTheDocument();
+    expect(growth.getByText('▲ vs LY')).toBeInTheDocument();
     expect(
       screen.getByText(/prior-year period has no data in the source/i),
     ).toBeInTheDocument();
@@ -340,7 +366,11 @@ describe('Division performance tab', () => {
     renderApp();
     const table = await screen.findByRole('table', { name: /key brands/i });
     expect(within(table).getByText('HAPID')).toBeInTheDocument();
-    expect(within(table).getByText('4.00 L')).toBeInTheDocument();
+    // Values in ₹ lakhs, as the panel header says; exact rupees on hover.
+    expect(within(table).getByText('4.0')).toHaveAttribute('title', '₹4,00,000.00');
+    // The Total row is the server's totals, not a sum of the listed brands.
+    const total = within(table).getByText('Total').closest('tr')!;
+    expect(within(total).getByText('200.0')).toBeInTheDocument();
   });
 
   it('shows the CN and O/S card with percentages', async () => {
@@ -392,7 +422,7 @@ describe('panels with no source in the warehouse', () => {
     });
     renderApp();
 
-    expect(await screen.findByText('RCPA plan vs. actual')).toBeInTheDocument();
+    expect(await screen.findByText('RCPA Plan vs Actual | Value/Dr.')).toBeInTheDocument();
     expect(screen.getByText('No RCPA feed in this view.')).toBeInTheDocument();
     expect(screen.getAllByText('No source').length).toBeGreaterThan(0);
   });
@@ -413,7 +443,7 @@ describe('panels with no source in the warehouse', () => {
     expect(screen.getByText(/No TM headcount feed/)).toBeInTheDocument();
   });
 
-  it('drops mix donuts that have no values rather than drawing empty ones', async () => {
+  it('keeps an empty brand-mix pie in its slot and says why, rather than drawing it empty', async () => {
     tabPayload = tab({
       mix: {
         dimension: 'brandGroup',
@@ -426,8 +456,11 @@ describe('panels with no source in the warehouse', () => {
     });
     renderApp();
 
-    expect(await screen.findByText(/Mix by brand group/i)).toBeInTheDocument();
-    expect(screen.getByText(/Coll, Sec, RCPA not shown/i)).toBeInTheDocument();
+    expect(await screen.findByText('Dispatch mix by brand')).toBeInTheDocument();
+    for (const title of ['Collection mix by brand', 'Secondary mix by brand', 'RCPA mix by brand']) {
+      expect(screen.getByText(title)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText('No data for the selected period.')).toHaveLength(3);
   });
 
   it('hides table columns that are null in every row', async () => {
@@ -472,5 +505,66 @@ describe('geo tab', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
     const table = await screen.findByRole('table', { name: /zone performance/i });
     expect(within(table).getByText('Total')).toBeInTheDocument();
+  });
+});
+
+describe('filter cascade', () => {
+  /** A filter dropdown, once its options have loaded. Its name is "<label> <value>". */
+  const dropdown = async (label: string) => {
+    const button = await screen.findByRole('button', { name: new RegExp(`^${label} `) });
+    await waitFor(() => expect(button).toBeEnabled());
+    return button;
+  };
+  /** The option codes a dropdown offers right now. */
+  const offered = async (label: string) => {
+    fireEvent.click(await dropdown(label));
+    const list = await screen.findByRole('listbox', { name: label });
+    const names = within(list).getAllByRole('option').map((o) => o.textContent);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    return names;
+  };
+  const choose = async (label: string, option: RegExp) => {
+    fireEvent.click(await dropdown(label));
+    const list = await screen.findByRole('listbox', { name: label });
+    fireEvent.click(within(list).getByRole('option', { name: option }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+  };
+  const filterUrls = () =>
+    vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/meta/filters'));
+
+  it('lists only the chosen division’s brands and zones', async () => {
+    renderApp();
+    expect(await offered('Brand')).toEqual(['HAPID', 'WOSULIN']);
+
+    await choose('Division', /DIABETES/);
+
+    expect(await offered('Brand')).toEqual(['WOSULIN']);
+    expect(await offered('Zone')).toEqual(['DIAB - DELHIDZ']);
+    expect(filterUrls().at(-1)).toContain('division=85');
+  });
+
+  it('narrows regions by zone and HQs by region', async () => {
+    renderApp();
+    await choose('Zone', /HYDERABAD/);
+    expect(await offered('Region')).toEqual(['JHH']);
+
+    await choose('Region', /JHH/);
+    expect(await offered('HQ')).toEqual(['M2HYDP']);
+    expect(filterUrls().at(-1)).toMatch(/zone=JH.*region=JHH/);
+  });
+
+  it('clears the brand, zone, region and HQ chosen under another division', async () => {
+    renderApp();
+    await choose('Brand', /HAPID/);
+    await choose('Zone', /HYDERABAD/);
+    await choose('Region', /JHH/);
+    expect(await dropdown('Zone')).toHaveAccessibleName('Zone MER2 - HYDERABAD');
+
+    await choose('Division', /DIABETES/);
+
+    for (const label of ['Brand', 'Zone', 'Region', 'HQ']) {
+      expect(await dropdown(label)).toHaveAccessibleName(`${label} All`);
+    }
+    expect(useFilterStore.getState()).toMatchObject({ division: ['85'], brand: [], zone: [], region: [], hq: [] });
   });
 });

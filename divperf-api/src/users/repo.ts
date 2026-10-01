@@ -16,10 +16,12 @@ export interface UserRecord {
   email: string | null;
   scopeLevel: ScopeLevel;
   scopeNodes: string[];
+  /** The person's own division code(s). */
+  divisions: string[];
 }
 
 const USER_COLUMNS = `empcode AS id, usertype, name, mobileno, email,
-  scope_level AS "scopeLevel", scope_nodes AS "scopeNodes"`;
+  scope_level AS "scopeLevel", scope_nodes AS "scopeNodes", divisions`;
 
 export type MobileLookup =
   | { found: 'one'; user: UserRecord }

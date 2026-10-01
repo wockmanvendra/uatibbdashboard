@@ -26,6 +26,8 @@ export function MultiSelect({
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const labelId = useId();
+  const valueId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -63,29 +65,29 @@ export function MultiSelect({
 
   return (
     <div ref={rootRef} className="relative min-w-0">
-      <label className="kpi-label mb-0.5 block">{label}</label>
+      <span id={labelId} className="xl-label">{label}</span>
       <button
         type="button"
         disabled={disabled || loading}
         onClick={() => setOpen((v) => !v)}
+        // Announced as "Zone, All" / "Zone, MER2 - HYDERABAD".
+        aria-labelledby={`${labelId} ${valueId}`}
         aria-expanded={open}
         aria-controls={listId}
         aria-haspopup="listbox"
-        className={`flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border px-2 text-left text-[12px] ${
-          disabled || loading
-            ? 'cursor-not-allowed border-rule bg-paper text-ink-3'
-            : 'border-rule bg-surface text-ink hover:border-ink-3'
-        } ${selected.length > 0 ? 'border-ink-3' : ''}`}
+        className={`xl-field flex w-full min-w-0 items-center justify-between gap-1 text-left ${
+          disabled || loading ? '' : 'hover:border-[var(--xl-navy)]'
+        } ${selected.length > 0 ? 'border-[var(--xl-navy)] bg-[var(--xl-hover)]' : ''}`}
       >
         {loading ? (
-          <span className="flex items-center gap-1.5 text-ink-3">
-            <Spinner size={12} className="text-[var(--series-disp)]" />
+          <span id={valueId} className="flex items-center gap-1.5 text-ink-3">
+            <Spinner size={12} className="text-[var(--xl-title)]" />
             Loading
           </span>
         ) : (
-          <span className="truncate">{summary}</span>
+          <span id={valueId} className="truncate">{summary}</span>
         )}
-        <span aria-hidden="true" className="shrink-0 text-ink-3">
+        <span aria-hidden="true" className="shrink-0 text-[var(--xl-field)]">
           ▾
         </span>
       </button>
@@ -96,7 +98,7 @@ export function MultiSelect({
           role="listbox"
           aria-multiselectable="true"
           aria-label={label}
-          className="absolute z-40 mt-1 max-h-72 w-64 overflow-hidden rounded border border-rule bg-surface shadow-lg"
+          className="absolute z-40 mt-1 max-h-72 w-64 overflow-hidden rounded-sm border border-[var(--xl-field)] bg-white shadow-lg"
         >
           <div className="border-b border-rule p-1.5">
             <input
@@ -128,7 +130,7 @@ export function MultiSelect({
                       toggle(o.code);
                     }
                   }}
-                  className={`flex cursor-pointer items-center gap-2 px-2.5 py-1 text-[12px] hover:bg-paper ${
+                  className={`flex cursor-pointer items-center gap-2 px-2.5 py-1 text-[12px] hover:bg-[var(--xl-hover)] ${
                     on ? 'text-ink' : 'text-ink-2'
                   }`}
                 >
@@ -137,7 +139,7 @@ export function MultiSelect({
                     checked={on}
                     readOnly
                     tabIndex={-1}
-                    className="pointer-events-none h-3 w-3 accent-[var(--series-disp)]"
+                    className="pointer-events-none h-3 w-3 accent-[var(--xl-navy)]"
                   />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
                   {o.code !== o.name && (

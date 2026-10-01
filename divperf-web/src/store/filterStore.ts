@@ -47,9 +47,15 @@ export const useFilterStore = create<FilterState>((set) => ({
   setDimension: (key, values) =>
     set((s) => {
       const next = { ...s, [key]: values } as FilterState;
-      // Clearing a parent invalidates its children: a region selection is
-      // meaningless once its zone is deselected, and leaving it set silently
-      // returns an empty dashboard.
+      // Changing a parent invalidates its children, whose option lists it
+      // decides (Division → Brand, Division → Zone → Region → HQ). A child
+      // left set from another branch silently returns an empty dashboard.
+      if (key === 'division') {
+        next.brand = [];
+        next.zone = [];
+        next.region = [];
+        next.hq = [];
+      }
       if (key === 'zone') {
         next.region = [];
         next.hq = [];

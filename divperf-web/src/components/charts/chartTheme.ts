@@ -1,47 +1,40 @@
 /**
  * Shared ECharts theme and the primitives every chart in this app is built from.
  *
- * Design rules encoded here (see §9 and the palette note in index.css):
- *  - Recessive grid and axes; the data is the only thing with weight.
- *  - Thin marks with a 2px surface gap between adjacent bars and between
- *    stacked segments, so the coll/sec pair stays separable under protanopia
- *    where it only reaches ΔE 7.4.
- *  - 4px rounded data-ends anchored to the baseline.
- *  - A legend is always present for two or more series — identity is never
- *    carried by colour alone.
- *  - Axis labels and values wear ink tokens, never the series colour.
+ * The look is the "Division Performance: Sales Dashboard" Excel report: the
+ * Office palette (blue, red, green, purple…) assigned by series position, flat
+ * bars, square legend keys under the plot, centred titles, and values in
+ * ₹ lakhs. A legend is always present for two or more series, and every chart
+ * has a Table view, so identity never rests on colour alone.
  */
 import type { EChartsOption } from 'echarts';
-import { axisMoney, moneyFull, percent } from '../../lib/format';
+import { axisLakhs, lakhs, percent } from '../../lib/format';
 
-export const SERIES = {
-  disp: '#17607D',
-  sec: '#E8743B',
-  coll: '#2E7D4F',
-  rcpa: '#4FA3C7',
-  tgt: '#A9B8BF',
-  cnExp: '#17607D',
-  cnSr: '#E8743B',
-  cnPd: '#7B4EA3',
-  /** Ratio lines read as a different kind of quantity, so they wear ink. */
-  ratio: '#47606B',
+/** The Office chart palette, in the order Excel assigns it. */
+export const XL = {
+  blue: '#4F81BD',
+  red: '#C0504D',
+  green: '#9BBB59',
+  purple: '#8064A2',
+  aqua: '#4BACC6',
+  orange: '#F79646',
 } as const;
 
-export const INK = '#10242E';
-export const INK_2 = '#47606B';
-export const INK_3 = '#7B909A';
-export const RULE = '#DDE3E1';
+export const INK = '#404040';
+export const INK_2 = '#595959';
+export const INK_3 = '#7F7F7F';
+export const RULE = '#D9D9D9';
 export const SURFACE = '#FFFFFF';
 
-/** Categorical order for the mix donuts. Fixed, never cycled. */
-export const MIX_COLORS = [SERIES.disp, SERIES.sec, SERIES.coll, SERIES.cnPd, SERIES.rcpa, INK_3];
+/** Slice order for the mix pies. Fixed, never cycled. */
+export const MIX_COLORS = [XL.blue, XL.red, XL.green, XL.purple, XL.aqua, XL.orange];
 
-const FONT = '"IBM Plex Sans", system-ui, sans-serif';
+export const FONT = '"Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif';
 
 export const baseTextStyle = { fontFamily: FONT, color: INK_2, fontSize: 11 };
 
-/** Charts get a fixed height per breakpoint so a month change never shifts layout. */
-export const CHART_HEIGHT = { trend: 260, mix: 170, wide: 300 } as const;
+/** Charts get a fixed height so a month change never shifts layout. */
+export const CHART_HEIGHT = { trend: 250, mix: 230, wide: 300 } as const;
 
 export function categoryAxis(labels: string[]) {
   return {
@@ -49,7 +42,7 @@ export function categoryAxis(labels: string[]) {
     data: labels,
     axisLine: { lineStyle: { color: RULE } },
     axisTick: { show: false },
-    axisLabel: { color: INK_3, fontSize: 11, fontFamily: FONT, hideOverlap: true },
+    axisLabel: { color: INK_2, fontSize: 11, fontFamily: FONT, hideOverlap: true },
   };
 }
 
@@ -61,12 +54,7 @@ export function moneyAxis(name?: string) {
     axisLine: { show: false },
     axisTick: { show: false },
     splitLine: { lineStyle: { color: RULE, type: 'solid' as const, width: 1 } },
-    axisLabel: {
-      color: INK_3,
-      fontSize: 11,
-      fontFamily: FONT,
-      formatter: (v: number) => axisMoney(v),
-    },
+    axisLabel: { color: INK_2, fontSize: 11, fontFamily: FONT, formatter: (v: number) => axisLakhs(v) },
   };
 }
 
@@ -79,76 +67,76 @@ export function ratioAxis(name: string, isPercent: boolean) {
     axisTick: { show: false },
     splitLine: { show: false },
     axisLabel: {
-      color: INK_3,
+      color: INK_2,
       fontSize: 11,
       fontFamily: FONT,
       // One decimal where it matters, so a 0–3% axis does not read "3%, 3%, 2%, 2%".
-      formatter: (v: number) => (isPercent ? `${Number(v.toFixed(1))}%` : axisMoney(v)),
+      formatter: (v: number) => (isPercent ? `${Number(v.toFixed(1))}%` : axisLakhs(v)),
     },
   };
 }
 
-/** 4px rounded data-ends anchored to the baseline, plus the 2px inter-bar gap. */
+/** Flat Excel bars. */
 export const BAR_STYLE = {
   type: 'bar' as const,
-  barMaxWidth: 22,
-  barGap: '12%',
-  barCategoryGap: '32%',
-  itemStyle: { borderRadius: [4, 4, 0, 0] as [number, number, number, number] },
+  barMaxWidth: 18,
+  barGap: '8%',
+  barCategoryGap: '30%',
+  itemStyle: { borderRadius: 0 },
 };
 
-/** A stacked segment carries a surface-coloured hairline so segments separate. */
+/** Stacked segments carry a hairline so they separate. */
 export const STACK_STYLE = {
   type: 'bar' as const,
   stack: 'total',
   barMaxWidth: 22,
-  barCategoryGap: '32%',
-  itemStyle: { borderColor: SURFACE, borderWidth: 2 },
+  barCategoryGap: '35%',
+  itemStyle: { borderColor: SURFACE, borderWidth: 1 },
 };
 
 export const LINE_STYLE = {
   type: 'line' as const,
   smooth: false,
   symbol: 'circle' as const,
-  symbolSize: 8,
-  lineStyle: { width: 2 },
+  symbolSize: 5,
+  lineStyle: { width: 2.5 },
   z: 5,
 };
 
 export const legend = (bottom = 0) => ({
   bottom,
   left: 'center' as const,
-  icon: 'roundRect',
+  icon: 'rect',
   itemWidth: 10,
   itemHeight: 10,
-  itemGap: 14,
+  itemGap: 16,
   textStyle: { color: INK_2, fontSize: 11, fontFamily: FONT },
 });
 
 export const grid = (opts: { left?: number; right?: number; top?: number; bottom?: number } = {}) => ({
   left: opts.left ?? 8,
   right: opts.right ?? 8,
-  top: opts.top ?? 16,
+  top: opts.top ?? 14,
   bottom: opts.bottom ?? 26,
   containLabel: true,
 });
 
-/**
- * Crosshair tooltip. Money series render at full precision here — the axis
- * abbreviates, the tooltip does not.
- */
 export function tooltip(kind: 'axis' | 'item' = 'axis'): EChartsOption['tooltip'] {
   return {
     trigger: kind,
-    axisPointer: { type: 'line', lineStyle: { color: INK_3, width: 1, type: 'dashed' } },
+    axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(79,129,189,0.08)' } },
     backgroundColor: SURFACE,
     borderColor: RULE,
     borderWidth: 1,
     padding: [8, 10],
     textStyle: { color: INK, fontSize: 12, fontFamily: FONT },
-    extraCssText: 'box-shadow: 0 2px 8px rgba(16,36,46,0.10); border-radius: 6px;',
+    extraCssText: 'box-shadow: 0 2px 8px rgba(31,56,100,0.12); border-radius: 2px;',
   };
 }
+
+/** A money value in a tooltip or table: "340.0 L". */
+export const lakhLabel = (v: number | null | undefined) =>
+  v === null || v === undefined ? '—' : `${lakhs(v, 1)} L`;
 
 /** Formats a value for a tooltip row according to the series it belongs to. */
 export function formatSeriesValue(
@@ -157,7 +145,7 @@ export function formatSeriesValue(
   percentSeries: ReadonlySet<string>,
 ): string {
   if (value === null || value === undefined) return '—';
-  return percentSeries.has(name) ? percent(value) : moneyFull(value);
+  return percentSeries.has(name) ? percent(value) : lakhLabel(value);
 }
 
 export const baseOption: EChartsOption = {

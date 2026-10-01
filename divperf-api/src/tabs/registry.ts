@@ -26,6 +26,8 @@ const CHART_SERIES = [
   'disp', 'sec', 'rcpa', 'pcpm',
   // "Tgt vs. Disp vs. Coll"
   'tgt', 'coll',
+  // "Target vs Ach% & Gr%"
+  'achPct', 'grPct',
   // "RCPA Plan vs. Actual"
   'rcpaPlan', 'rcpaActual', 'valuePerDr',
   // "Credit Note"
@@ -39,7 +41,7 @@ export const TABS: TabConfig[] = [
     grain: 'division',
     panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
-    mixDimension: 'brandGroup',
+    mixDimension: 'brand',
   },
   {
     id: 'brand-performance',
@@ -55,7 +57,7 @@ export const TABS: TabConfig[] = [
     grain: 'zone',
     panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
-    mixDimension: 'zone',
+    mixDimension: 'brand',
   },
   {
     id: 'region-performance',
@@ -63,7 +65,7 @@ export const TABS: TabConfig[] = [
     grain: 'region',
     panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
-    mixDimension: 'region',
+    mixDimension: 'brand',
   },
   {
     id: 'hq-performance',
@@ -71,7 +73,7 @@ export const TABS: TabConfig[] = [
     grain: 'hq',
     panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
-    mixDimension: 'hq',
+    mixDimension: 'brand',
   },
   {
     id: 'credit-note',
@@ -79,7 +81,7 @@ export const TABS: TabConfig[] = [
     grain: 'division',
     panels: ['creditNote', 'cnDetail', 'trends'],
     trendSeries: ['cnExp', 'cnSr', 'cnPd', 'cnPct'],
-    mixDimension: 'brandGroup',
+    mixDimension: 'brand',
   },
 ];
 

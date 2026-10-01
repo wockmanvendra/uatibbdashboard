@@ -6,8 +6,7 @@
  * renders by index and never builds intermediate objects per row.
  */
 import { useMemo, useState } from 'react';
-import { EM_DASH, growth, growthClass, money, moneyFull, percent } from '../../lib/format';
-import { GapRibbon } from './GapRibbon';
+import { EM_DASH, lakhs, moneyFull, percent } from '../../lib/format';
 
 export type CellFormat = 'text' | 'code' | 'money' | 'percent' | 'growth' | 'ach' | 'number';
 
@@ -41,28 +40,20 @@ interface DataTableProps {
 }
 
 function renderCell(v: string | number | null, format: CellFormat) {
-  if (v === null || v === undefined) return <span className="text-ink-3">{EM_DASH}</span>;
+  if (v === null || v === undefined) return <span className="text-[var(--xl-muted)]">{EM_DASH}</span>;
   switch (format) {
     case 'money':
-      return <span title={moneyFull(v as number)}>{money(v as number)}</span>;
+      // Lakhs to one decimal, as the report's "(₹ L)" columns; full rupees on hover.
+      return <span title={moneyFull(v as number)}>{lakhs(v as number, 1)}</span>;
     case 'percent':
+    case 'ach':
       return percent(v as number);
     case 'growth':
-      return <span className={growthClass(v as number)}>{growth(v as number)}</span>;
-    case 'ach':
-      // Bar and figure on one line, so the row keeps its height.
-      return (
-        <div className="flex items-center justify-end gap-2">
-          <div className="w-14">
-            <GapRibbon ach={v as number} label="Achievement" inline />
-          </div>
-          <span className="w-12">{percent(v as number)}</span>
-        </div>
-      );
+      return <span className={(v as number) < 0 ? 'text-bad' : undefined}>{percent(v as number)}</span>;
     case 'number':
       return (v as number).toLocaleString('en-IN');
     case 'code':
-      return <span className="font-mono text-[12px] text-ink-2">{v}</span>;
+      return <span className="font-mono text-[12px] text-[var(--xl-muted)]">{v}</span>;
     default:
       return String(v);
   }
@@ -107,35 +98,29 @@ export function DataTable({
 
   const isLeft = (c: ColumnSpec) =>
     (c.align ?? (c.format === 'text' || c.format === 'code' ? 'left' : 'right')) === 'left';
-  const last = columns.length - 1;
 
   return (
     <div className="overflow-auto" style={{ maxHeight }}>
-      {/* Separate borders so the header band can have rounded ends. */}
-      <table className="w-full border-separate border-spacing-0 text-table tnum">
+      <table className="xl-table tnum">
         <caption className="sr-only">{caption}</caption>
         <thead className="sticky top-0 z-10">
           <tr>
-            {columns.map((c, ci) => {
+            {columns.map((c) => {
               const active = sort?.index === c.index;
               return (
                 <th
                   key={c.index}
                   scope="col"
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  className={`whitespace-nowrap bg-[var(--table-head)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3 ${
-                    isLeft(c) ? 'text-left' : 'text-right'
-                  } ${ci === 0 ? 'rounded-l-md' : ''} ${ci === last ? 'rounded-r-md' : ''} ${
-                    c.sticky ? 'sticky left-0 z-20' : ''
-                  }`}
+                  className={`${isLeft(c) ? 'text-left' : 'text-right'} ${c.sticky ? 'sticky left-0 z-20' : ''}`}
                 >
                   <button
                     type="button"
                     onClick={() => toggle(c.index)}
-                    className="inline-flex items-center gap-1 uppercase tracking-[0.06em] hover:text-ink-2"
+                    className="inline-flex items-center gap-1 font-semibold text-white hover:text-white/80"
                   >
                     {c.label}
-                    <span aria-hidden="true" className={active ? 'text-ink-2' : 'text-transparent'}>
+                    <span aria-hidden="true" className={active ? 'text-white/80' : 'text-transparent'}>
                       {active && sort.dir === 'asc' ? '▲' : '▼'}
                     </span>
                   </button>
@@ -147,20 +132,14 @@ export function DataTable({
 
         <tbody>
           {sorted.map((row, i) => (
-            <tr
-              key={String(row[0]) + i}
-              className={`${i % 2 ? 'bg-[var(--table-zebra)]' : 'bg-surface'} transition-colors hover:bg-[var(--table-hover)]`}
-            >
+            <tr key={String(row[0]) + i}>
               {columns.map((c) => {
                 const Tag = c.index === 0 ? 'th' : 'td';
                 return (
                   <Tag
                     key={c.index}
                     {...(c.index === 0 ? { scope: 'row' as const } : {})}
-                    className={`border-b border-rule-soft px-3 ${isLeft(c) ? 'text-left' : 'text-right'} ${
-                      c.index === 0 ? 'font-medium text-ink' : 'text-ink-2'
-                    } ${c.sticky ? 'sticky left-0 bg-inherit' : ''}`}
-                    style={{ height: 'var(--row-h)' }}
+                    className={`${isLeft(c) ? 'text-left' : 'text-right'} ${c.sticky ? 'sticky left-0 bg-inherit' : ''}`}
                   >
                     {renderCell(row[c.index] ?? null, c.format)}
                   </Tag>
@@ -171,7 +150,7 @@ export function DataTable({
 
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={columns.length} className="py-8 text-center text-[12px] text-ink-3">
+              <td colSpan={columns.length} className="py-8 text-center text-[12px] text-[var(--xl-muted)]">
                 No rows for the selected period.
               </td>
             </tr>
@@ -179,25 +158,16 @@ export function DataTable({
         </tbody>
 
         {total && (
-          <tfoot className="sticky bottom-0">
-            <tr className="font-semibold">
-              {columns.map((c, ci) => {
-                return (
-                  <td
-                    key={c.index}
-                    className={`border-t-2 border-rule bg-[var(--table-total)] px-3 text-ink shadow-[var(--shadow-total)] ${
-                      isLeft(c) ? 'text-left' : 'text-right'
-                    } ${ci === 0 ? 'rounded-bl-md' : ''} ${ci === last ? 'rounded-br-md' : ''} ${
-                      c.sticky ? 'sticky left-0' : ''
-                    }`}
-                    style={{ height: 'var(--row-h)' }}
-                  >
-                    {/* The ribbon is a per-row comparison device; on the total it
-                        would invite reading an average of percentages. */}
-                    {renderCell(total[c.index] ?? null, c.format === 'ach' ? 'percent' : c.format)}
-                  </td>
-                );
-              })}
+          <tfoot className="sticky bottom-0 z-10">
+            <tr>
+              {columns.map((c) => (
+                <td
+                  key={c.index}
+                  className={`${isLeft(c) ? 'text-left' : 'text-right'} ${c.sticky ? 'sticky left-0' : ''}`}
+                >
+                  {renderCell(total[c.index] ?? null, c.format)}
+                </td>
+              ))}
             </tr>
           </tfoot>
         )}

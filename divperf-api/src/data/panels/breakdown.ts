@@ -5,10 +5,8 @@
  * available without a second round trip.
  */
 import type { Db } from '../db.js';
-import {
-  BRAND_GROUP_SQL, MEASURE_SELECT, SOURCE, num, type MeasureRow,
-} from '../sqlFragments.js';
-import { grainSelect, type PanelFilters } from '../queryBuilder.js';
+import { DIMENSION, MEASURE_SELECT, SOURCE, code, num, type MeasureRow } from '../sqlFragments.js';
+import { buildPredicate, grainSelect, type PanelFilters } from '../queryBuilder.js';
 import { twoWindowPredicate, groupByNode, type WindowedRow } from './shared.js';
 import type { Scope } from '../../plugins/scope.js';
 import type { DimensionName } from '../sqlFragments.js';
@@ -97,35 +95,44 @@ export interface MixSlice {
   rcpa: number | null;
 }
 
+/** Brands named in the mix; the rest are folded into "Others". */
+export const MIX_TOP_BRANDS = 4;
+export const MIX_OTHERS = 'Others';
+
 /**
- * The mix donuts, grouped by brand group.
+ * The brand mix: the top brands by dispatch in the selected period, plus
+ * "Others". Ranking and folding both happen in SQL — nothing is summed here.
  *
  * Dispatch, secondary and RCPA carry a brand, so those slices are real.
  * Collection does not — it is recorded per customer with a blank brand — so it
- * lands entirely in one group and the Coll donut is not meaningful until a
- * brand-level collection feed exists. It is returned anyway so the caller can
- * decide.
+ * all lands in "Others" and the caller leaves the Coll mix out.
  */
 export async function fetchMix(
   db: Db,
   scope: Scope,
   filters: PanelFilters,
 ): Promise<MixSlice[]> {
-  const { where, params, winCase } = twoWindowPredicate(scope, filters);
+  const { where, params } = buildPredicate(scope, filters);
+  const brand = DIMENSION.brand.codeCol;
 
-  const rows = await db.all<MeasureRow & WindowedRow & { grp: string }>(
+  const rows = await db.all<MeasureRow & { grp: string }>(
     `SELECT
-    ${winCase} AS win,
-    ${BRAND_GROUP_SQL} AS grp,
+    COALESCE(t.top_brand, '${MIX_OTHERS}') AS grp,
     ${MEASURE_SELECT}
-  FROM ${SOURCE}
+  FROM ${SOURCE} s
+  LEFT JOIN (
+    SELECT TOP ${MIX_TOP_BRANDS} ${code(brand)} AS top_brand
+    FROM ${SOURCE}
+    WHERE ${where} AND ${code(brand)} IS NOT NULL
+    GROUP BY ${code(brand)}
+    ORDER BY SUM(CAST(NET_SALES AS DECIMAL(38,6))) DESC
+  ) t ON t.top_brand = ${code(`s.${brand}`)}
   WHERE ${where}
-  GROUP BY ${winCase}, ${BRAND_GROUP_SQL}`,
+  GROUP BY COALESCE(t.top_brand, '${MIX_OTHERS}')`,
     params,
   );
 
   return rows
-    .filter((r) => r.win === 'cur')
     .map((r) => ({
       label: r.grp,
       disp: num(r.disp),
@@ -134,5 +141,8 @@ export async function fetchMix(
       sec: num(r.sec),
       rcpa: num(r.rcpa),
     }))
-    .sort((a, b) => (b.disp ?? 0) - (a.disp ?? 0));
+    // Largest first; "Others" always last, as a legend reads.
+    .sort((a, b) =>
+      a.label === MIX_OTHERS ? 1 : b.label === MIX_OTHERS ? -1 : (b.disp ?? 0) - (a.disp ?? 0),
+    );
 }

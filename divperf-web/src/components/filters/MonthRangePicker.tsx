@@ -53,7 +53,7 @@ export function MonthRangePicker({ months, from, to, onChange, loading }: MonthR
         disabled={loading}
         onChange={(v) => onChange(Math.min(from, v), v)}
       />
-      <span className="pb-1 whitespace-nowrap text-[11px] text-ink-3 tnum">
+      <span className="pb-1.5 whitespace-nowrap text-[11px] font-semibold text-[var(--xl-label)] tnum">
         {span} {span === 1 ? 'month' : 'months'}
       </span>
     </div>
@@ -72,12 +72,12 @@ function Select({
 }) {
   return (
     <div className="min-w-0">
-      <label className="kpi-label mb-0.5 block">{label}</label>
+      <label className="xl-label">{label}</label>
       <select
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-7 rounded border border-rule bg-surface px-1.5 text-[12px] text-ink tnum disabled:cursor-not-allowed disabled:bg-paper disabled:text-ink-3"
+        className="xl-field tnum"
       >
         {options.map((m) => {
           const has = available.includes(m.yrMn);

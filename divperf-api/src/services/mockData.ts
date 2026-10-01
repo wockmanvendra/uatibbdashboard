@@ -461,6 +461,14 @@ function buildTrends(f: MockFilters, series: string[]): TrendsPanel {
   if (want.has('pcpm')) out.pcpm = pick((x) => M.pcpm(x.coll, x.tmCount, 1));
   if (want.has('tgt')) out.tgt = pick((x) => x.tgt);
   if (want.has('coll')) out.coll = pick((x) => x.coll);
+  if (want.has('achPct')) out.achPct = pick((x) => M.achPct(x.coll, x.tgt));
+  if (want.has('grPct')) {
+    out.grPct = months.map((m, i) => {
+      const c = per[i];
+      const p = monthFigures(priorYear(m), f, 'base');
+      return c && p ? M.grPct(c.disp, p.disp) : null;
+    });
+  }
   if (want.has('rcpaPlan')) out.rcpaPlan = pick((x) => x.rcpaPlan);
   if (want.has('rcpaActual')) out.rcpaActual = pick((x) => x.rcpaActual);
   // DUMMY: "Value / Dr. Actual" — RCPA per doctor. No doctor-count source.

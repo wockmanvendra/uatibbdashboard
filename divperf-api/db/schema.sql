@@ -161,11 +161,13 @@ SELECT division_code, user_type, empcode, user_name, user_location, sapcode, mob
 -- level — TM: HQ (BZIRK), RM: region (VKGRP), ZSM: zone (VKBUR) — and an NSM
 -- sees their division (SPART). Someone listed under several roles is scoped by
 -- the broadest; several nodes at that level (or a comma-separated code) are
--- all kept.
+-- all kept. `divisions` holds everyone's own division(s): an HQ, region or zone
+-- code can recur in another division, so every query is held to them as well.
 
 CREATE OR REPLACE VIEW vw_dashboard_users AS
 WITH people AS (
     SELECT btrim(empcode) AS empcode,
+           btrim(division_code) AS division_code,
            user_type,
            btrim(user_name) AS user_name,
            right(regexp_replace(mobile_no, '\D', '', 'g'), 10) AS mobileno,
@@ -189,7 +191,13 @@ SELECT p.empcode,
          array_agg(DISTINCT btrim(node) ORDER BY btrim(node))
            FILTER (WHERE btrim(node) NOT IN ('', '-', '0')),
          '{}'
-       ) AS scope_nodes
+       ) AS scope_nodes,
+       -- Appended last: CREATE OR REPLACE VIEW can only add columns at the end.
+       COALESCE(
+         array_agg(DISTINCT p.division_code ORDER BY p.division_code)
+           FILTER (WHERE p.division_code <> ''),
+         '{}'
+       ) AS divisions
   FROM people p
   JOIN broadest b ON b.empcode = p.empcode AND b.role_rank = p.role_rank
   -- LEFT, so someone with no code stays listed, with no nodes, rather than vanishing.

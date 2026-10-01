@@ -266,6 +266,10 @@ export interface TrendsPanel {
   /** Chart "Tgt vs. Disp vs. Coll". */
   tgt?: (number | null)[];
   coll?: (number | null)[];
+  /** Chart "Target vs Ach% & Gr%": collection achievement, and dispatch growth
+   *  against the same month a year earlier. */
+  achPct?: (number | null)[];
+  grPct?: (number | null)[];
   /** Chart "RCPA Plan vs. Actual" — bars plus a Value/Dr line on axis 2. */
   rcpaPlan?: (number | null)[];
   rcpaActual?: (number | null)[];

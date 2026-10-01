@@ -1,9 +1,12 @@
 /**
- * The Excel "Key Brands Performance" grid.
+ * The report's KEY BRANDS PERFORMANCE grid.
  * Columns: Brand | Tgt | Disp | Coll | Ach% on Coll | Gr% | Sec | Inventory | RCPA
+ *
+ * The Total row is passed in from the tab's server-computed totals — the grid
+ * shows the top brands only, and the client never sums rows. (I3)
  */
-import type { KeyBrandsPanel } from '../../types/api';
-import { Card } from '../ui/Card';
+import type { KeyBrandRow, KeyBrandsPanel } from '../../types/api';
+import { Panel } from '../ui/Panel';
 import { TableSkeleton } from '../ui/States';
 import { DataTable, type ColumnSpec } from './DataTable';
 import { downloadCsv } from '../../lib/csv';
@@ -22,46 +25,58 @@ const COLUMNS: ColumnSpec[] = [
 
 export function KeyBrandsTable({
   data,
+  total,
   loading,
   stale,
 }: {
   data?: KeyBrandsPanel;
+  total?: KeyBrandRow;
   loading: boolean;
   stale: boolean;
 }) {
   return (
-    <Card
-      title="Key brands performance"
+    <Panel
+      title="Key Brands Performance"
+      tone="teal"
       stale={stale}
-      aside={
-        data && data.rows.length > 0 ? (
-          <button
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                'key-brands',
-                COLUMNS.map((c) => c.label),
-                data.rows.map((r) => COLUMNS.map((c) => r[c.index] ?? '')),
-              )
-            }
-            className="btn-ghost"
-          >
-            Export
-          </button>
-        ) : undefined
+      actions={
+        <>
+          <span className="text-[11px] font-normal normal-case tracking-normal text-white/75">
+            Values in ₹ Lakhs
+          </span>
+          {data && data.rows.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                downloadCsv(
+                  'key-brands',
+                  COLUMNS.map((c) => c.label),
+                  data.rows.map((r) => COLUMNS.map((c) => r[c.index] ?? '')),
+                )
+              }
+              className="xl-btn-dark"
+            >
+              Export
+            </button>
+          )}
+        </>
       }
     >
       {loading || !data ? (
-        <TableSkeleton rows={6} />
+        <div className="p-3">
+          <TableSkeleton rows={6} />
+        </div>
       ) : (
         <DataTable
           columns={COLUMNS}
           rows={data.rows}
+          total={total}
           caption="Key brands performance for the selected period"
           defaultSort={2}
+          maxHeight={420}
           hideEmptyColumns
         />
       )}
-    </Card>
+    </Panel>
   );
 }

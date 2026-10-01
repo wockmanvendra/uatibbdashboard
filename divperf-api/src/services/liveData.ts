@@ -15,7 +15,7 @@ import type { Scope } from '../plugins/scope.js';
 import type { Db } from '../data/db.js';
 import type { PanelFilters } from '../data/queryBuilder.js';
 import { fetchTotals, type Totals } from '../data/panels/totals.js';
-import { fetchTrend } from '../data/panels/trends.js';
+import { fetchTrend, type TrendResult } from '../data/panels/trends.js';
 import { fetchBreakdown, fetchMix, type NodeBreakdown } from '../data/panels/breakdown.js';
 import * as M from '../lib/metrics.js';
 import { label, monthCount, priorYear } from '../lib/yrmn.js';
@@ -108,7 +108,9 @@ export async function buildLiveTab(
   // against Synapse they are the difference between 2 s and 8 s.
   const [totals, trend, breakdown, mix] = await Promise.all([
     fetchTotals(db, scope, filters),
-    tab.panels.includes('trends') ? fetchTrend(db, scope, filters) : Promise.resolve([]),
+    tab.panels.includes('trends')
+      ? fetchTrend(db, scope, filters)
+      : Promise.resolve<TrendResult>({ points: [], prior: new Map() }),
     needsBreakdown
       ? fetchBreakdown(db, scope, filters, tab.panels.includes('keyBrands') ? 'brand' : dimension)
       : Promise.resolve([]),
@@ -336,7 +338,7 @@ function geoTable(
   };
 }
 
-function trends(points: Awaited<ReturnType<typeof fetchTrend>>, series: string[]): TrendsPanel {
+function trends({ points, prior }: TrendResult, series: string[]): TrendsPanel {
   const want = new Set(series);
   const out: TrendsPanel = {
     months: points.map((p) => p.yrMn),
@@ -347,6 +349,10 @@ function trends(points: Awaited<ReturnType<typeof fetchTrend>>, series: string[]
   if (want.has('rcpa')) out.rcpa = points.map((p) => p.rcpa);
   if (want.has('tgt')) out.tgt = points.map((p) => p.tgt);
   if (want.has('coll')) out.coll = points.map((p) => p.coll);
+  if (want.has('achPct')) out.achPct = points.map((p) => M.achPct(p.coll, p.tgt));
+  if (want.has('grPct')) {
+    out.grPct = points.map((p) => M.grPct(p.disp, prior.get(priorYear(p.yrMn))?.disp ?? null));
+  }
   if (want.has('cnPct')) out.cnPct = points.map((p) => M.cnPct(p.cn, p.gross));
   // pcpm / rcpaPlan / rcpaActual / valuePerDr / cnExp / cnSr / cnPd are omitted
   // entirely: their sources do not exist, and a series of nulls would draw an

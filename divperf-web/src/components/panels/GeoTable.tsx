@@ -10,7 +10,7 @@
  * wrong anyway once the grid is filtered.
  */
 import type { GeoTablePanel } from '../../types/api';
-import { Card } from '../ui/Card';
+import { Panel } from '../ui/Panel';
 import { TableSkeleton } from '../ui/States';
 import { DataTable, type ColumnSpec } from './DataTable';
 import { downloadCsv } from '../../lib/csv';
@@ -51,14 +51,11 @@ function columnsFor(grain: GeoTablePanel['grain']): ColumnSpec[] {
 }
 
 function Chip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'bad' | 'neutral' }) {
+  // Light chips on the dark header bar.
   const cls =
-    tone === 'good'
-      ? 'border-good-soft bg-[color-mix(in_srgb,var(--good)_8%,var(--surface))] text-good'
-      : tone === 'bad'
-        ? 'border-bad-soft bg-[color-mix(in_srgb,var(--bad)_7%,var(--surface))] text-bad'
-        : 'border-rule bg-surface text-ink-2';
+    tone === 'good' ? 'bg-[#dff3e7] text-[#1e6b3f]' : tone === 'bad' ? 'bg-[#fbe3e1] text-[#8f2a25]' : 'bg-white text-[var(--xl-label)]';
   return (
-    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium tnum ${cls}`}>
+    <span className={`rounded-sm px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal tnum ${cls}`}>
       {label} <strong className="font-semibold">{value}</strong>
     </span>
   );
@@ -77,10 +74,11 @@ export function GeoTable({
   const columns = columnsFor(grain);
 
   return (
-    <Card
-      title={`${GRAIN_LABEL[grain]} performance`}
+    <Panel
+      title={`${GRAIN_LABEL[grain]} Performance`}
+      tone="teal"
       stale={stale}
-      aside={
+      actions={
         data ? (
           <div className="flex flex-wrap items-center gap-1.5">
             <Chip label={`${GRAIN_PLURAL[grain]} on tgt`} value={data.onTargetCount} tone="good" />
@@ -95,7 +93,7 @@ export function GeoTable({
                   data.rows.map((r) => columns.map((c) => r[c.index] ?? '')),
                 )
               }
-              className="btn-ghost"
+              className="xl-btn-dark"
             >
               Export
             </button>
@@ -104,7 +102,9 @@ export function GeoTable({
       }
     >
       {loading || !data ? (
-        <TableSkeleton rows={8} />
+        <div className="p-3">
+          <TableSkeleton rows={8} />
+        </div>
       ) : (
         <DataTable
           columns={columns}
@@ -116,6 +116,6 @@ export function GeoTable({
           hideEmptyColumns
         />
       )}
-    </Card>
+    </Panel>
   );
 }

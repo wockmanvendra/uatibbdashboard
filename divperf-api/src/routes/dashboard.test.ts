@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../server.js';
-import type { ApiError, TabResponse } from '../types/api.js';
+import type { ApiError, FiltersResponse, TabResponse } from '../types/api.js';
 
 // These tests are about the data, not access: the session is an all-divisions user.
 vi.mock('../users/repo.js', async (importOriginal) => ({
@@ -14,6 +14,7 @@ vi.mock('../users/repo.js', async (importOriginal) => ({
     email: null,
     scopeLevel: 'ALL',
     scopeNodes: [],
+    divisions: [],
   }),
 }));
 
@@ -150,6 +151,16 @@ describe('meta routes', () => {
     const oneZone = (await get('/api/meta/filters?zone=JH')).json<{ regions: unknown[]; hqs: unknown[] }>();
     expect(oneZone.regions.length).toBeLessThan(all.regions.length);
     expect(oneZone.hqs.length).toBeLessThan(all.hqs.length);
+  });
+
+  it('offers only the chosen division’s brands and zones', async () => {
+    const all = (await get('/api/meta/filters')).json<FiltersResponse>();
+    const merind = (await get('/api/meta/filters?division=78')).json<FiltersResponse>();
+    expect(merind.brands.length).toBeGreaterThan(0);
+    expect(merind.brands.length).toBeLessThan(all.brands.length);
+    expect(merind.brands.map((b) => b.code)).not.toContain('WOSULIN'); // a DIABETES brand
+    expect(merind.zones.length).toBeLessThan(all.zones.length);
+    expect(merind.zones.every((z) => z.code.startsWith('J'))).toBe(true);
   });
 
   it('marks the open month as not closed', async () => {

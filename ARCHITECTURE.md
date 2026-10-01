@@ -1055,6 +1055,16 @@ NSM's division at division level. The session token carries only the employee
 code; the person and scope are re-read from the view on every request (cached
 one minute). Rules 2–6 hold unchanged.
 
+**The scope also carries the user's division (2026-09-30).** HQ, region and zone
+codes are not unique across divisions — 59 of 540 HQ codes, 2 region codes and
+1 zone code recur in another division — so a node set alone would let a TM see a
+second division's figures under the same HQ code. `vw_dashboard_users.divisions`
+holds each person's division(s) (every current user has exactly one), and
+`permittedFor()` in `plugins/scope.ts` is the one definition of what a scope
+allows on each dimension: the nodes at its level, plus its divisions. The query
+builder, the tab service and the filter options all use it, and the divisions
+are part of `scopeHash`.
+
 ### 6.3 Second net
 
 Enable SQL Server row-level security on the fact and summary tables as a
@@ -1171,7 +1181,15 @@ segment lets a deploy invalidate everything by bumping it.
 #### `GET /api/meta/filters?division=78&zone=JH`
 
 Cascading options, already scope-filtered. Each level returns only values
-reachable given the levels above it and the user's scope.
+reachable given the levels above it and the user's scope:
+
+```
+Division ─┬─ Brand                  divisions: the user's own division(s) only
+          └─ Zone ── Region ── HQ
+```
+
+The frontend clears every level below one that changes, and while the new lists
+load it keeps the old ones on screen, marking only the levels below as loading.
 
 ```json
 {
@@ -1596,82 +1614,66 @@ discipline everywhere else.
 
 ### 9.1 Palette
 
-Series colours are inherited from the existing Excel report on purpose. Users
-already read dark teal as dispatch and orange as secondary; changing that
-costs real comprehension in a review meeting for no gain.
+The dashboard reproduces the "Division Performance: Sales Dashboard" Excel
+report (changed 2026-09-30 at the user's request, from screenshots of it).
+Users already read that report in review meetings; matching it costs them
+nothing to learn. Tokens live on `:root` in `src/index.css`.
 
 ```
---ink            #10242E   headings, primary numerals
---ink-2          #47606B   labels, secondary text
---ink-3          #7B909A   captions, axis ticks
---paper          #F7F8F6   page background (cool neutral, not cream)
---surface        #FFFFFF   cards
---rule           #DDE3E1   hairlines
+--xl-title       #1B9AD6   title bar
+--xl-navy        #1F3864   panel headers, table header rows, active tab
+--xl-teal        #134F5C   Key Brands / geo / CN panels, section bars
+--xl-filter      #E6EDF5   filter panel
+--xl-page        #F3F5F8   page background
+--xl-grid        #D5DEE9   grid lines;  --xl-zebra #F1F5FB  alternate rows
+--xl-text        #1F2D3D   body;        --xl-muted #6B7A8C  captions
 
---series-disp    #17607D   dispatch  (from source report)
---series-sec     #E8743B   secondary (from source report)
---series-coll    #2E7D4F   collection (from source report)
---series-rcpa    #4FA3C7   RCPA line
---series-muted   #A9B8BF   prior-year comparison
+--kpi-*          one colour bar per KPI tile (Target, Dispatch, Collection,
+                 Ach%, Growth, Secondary, PCPM)
 
---good           #2E7D4F   at or above target
---warn           #B8860B   85–99% of target
---bad            #A8322D   below 85%
+Charts use the Office palette in Excel's series order:
+  #4F81BD blue · #C0504D red · #9BBB59 green · #8064A2 purple · #4BACC6 aqua · #F79646 orange
+
+--good / --warn / --bad   achievement thresholds, unchanged
 ```
-
-Deliberately avoided: the warm-cream-plus-terracotta palette that has become the
-default AI aesthetic. This is a cool, clinical instrument for reading numbers
-under projector light, and the warm palette both fights the inherited series
-colours and washes out when projected.
 
 ### 9.2 Type
 
 ```
-Display / UI:  IBM Plex Sans      400, 500, 600
-Numerals:      IBM Plex Sans with font-variant-numeric: tabular-nums
-Codes:         IBM Plex Mono      400   (MATNR, customer codes, HQ codes)
+UI and numerals:  Segoe UI (Calibri, Arial fallback), tabular-nums for figures
+KPI value         24px / 700
+Tile / field label 11px / 600 / uppercase
+Panel header      13px / 700 / uppercase, white on navy or teal
+Table body        13px, first column bold
+Axis tick         11px
 ```
 
-Plex over Inter: Inter is the default choice and reads as such, and Plex has
-genuinely better tabular figures — which matters when a column of lakh values
-must align to the decimal. Mono for codes because an 18-digit zero-padded MATNR
-is unreadable in a proportional face.
-
-```
-KPI value      28px / 600 / tabular-nums / -0.02em
-KPI label      11px / 500 / uppercase / 0.08em / --ink-3
-Panel title    13px / 600 / --ink
-Table body     13px / 400 / tabular-nums
-Axis tick      11px / 400 / --ink-3
-```
-
-Sentence case everywhere. No title case, no all-caps outside the 11px KPI
-labels where letterspacing carries it.
+Money is shown in ₹ lakhs, as the report does: whole lakhs from 100 L
+("4,655"), one decimal below ("9.7"). The exact rupee figure is on hover.
 
 ### 9.3 Layout
 
-- 12-column grid, 16px gutters, 20px page margin.
-- Filter bar is sticky at the top, 56px, hairline bottom rule, `--surface`.
-- Panels are cards: `--surface`, 1px `--rule`, `border-radius: 12px`, 16px
-  padding, and a soft two-layer shadow (`--shadow-card`) that deepens on
-  hover — kept faint so a dense grid of 14 cards still reads as surfaces, not
-  noise (changed 2026-09-30 at the user's request; originally no shadows). KPI
-  cards carry a 3px top edge in their series colour; every other panel title
-  has a short bar in the accent colour. Tables have a tinted header band,
-  zebra rows, a hover tint, and a tinted Total row.
+- Blue title bar, then the light-blue FILTERS ▾ panel (sticky, collapsible),
+  then the tab strip.
+- Performance tabs, top to bottom: seven KPI tiles, each under a coloured bar;
+  PRIMARY PERFORMANCE and SECONDARY • PCPM • RCPA side by side; KEY BRANDS (or
+  the geo grid) with a server Total row; CREDIT NOTES & OUTSTANDING beside
+  MANPOWER ATTRITION; the SALES TRENDS section (six charts, three per row); the
+  BRAND MIX section (four pies: dispatch, collection, secondary, RCPA by brand).
+- Panels are square-cornered with a 1px grid border and a faint shadow; tables
+  have a navy header row, zebra rows, a hover tint and a bold Total row.
+- A chart or panel with no source keeps its slot and says why.
 - Density toggle (comfortable / compact) persisted in localStorage. Compact
-  drops padding to 10px and table rows to 28px, for the users who want the whole
-  tab on one screen with no scroll.
-- Charts get a fixed aspect ratio per breakpoint so a month change never shifts
-  layout.
+  drops table rows to 28px, for users who want the whole tab on one screen.
+- Charts have fixed heights so a month change never shifts layout.
 
 ### 9.4 Signature element: the gap ribbon
 
-A 4px horizontal band under every KPI value showing achievement as a filled
-proportion, with a 1px notch at the 100% position.
+A 4px horizontal band under the Ach% on Coll tile's value showing achievement
+as a filled proportion, with a 1px notch at the 100% position.
 
 ```
-Coll   17.50 L
+Ach% on Coll   87.5%
        ████████████████████▏          │
        ↑ filled to Ach%              ↑ 100% notch
 ```
@@ -1693,8 +1695,10 @@ filters stay disciplined.
 Indian conventions, because this is an Indian pharma division:
 
 - Lakh/crore grouping: `17,50,000` not `1,750,000`.
-- Abbreviate in KPIs: `17.50 L`, `1.24 Cr`. Full precision in tooltips.
-- Percentages: one decimal, always signed for growth (`+12.3%`, `−4.1%`).
+- Money in ₹ lakhs under a "(₹ L)" label, as the report shows it: `4,655`
+  from 100 L up, `9.7` below. Full rupees in tooltips and exports.
+- Percentages: one decimal. Growth direction is carried by ▲ / ▼ and red for
+  a fall.
 - Null renders as `—` (em dash, `--ink-3`), never `0`, never `N/A`.
 - Negative values in `--bad`, with a minus sign, never parentheses.
 

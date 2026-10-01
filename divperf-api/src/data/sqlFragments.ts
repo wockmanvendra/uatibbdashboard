@@ -125,20 +125,3 @@ export const DIMENSION = {
 
 export type DimensionName = keyof typeof DIMENSION;
 
-/**
- * Brand groupings for the mix donuts.
- *
- * §12 Q16 is still open — this is a rule, not a stored attribute. It belongs on
- * dim_brand once the business confirms the real grouping; until then it is a
- * CASE expression so at least it is applied in SQL and stated in one place.
- */
-export const BRAND_GROUP_SQL = `
-  CASE
-    WHEN ${code('Brand')} IS NULL THEN 'Others'
-    WHEN UPPER(${code('Brand')}) LIKE 'METHYCOBAL%' THEN 'Methycobal Group'
-    WHEN UPPER(${code('Brand')}) = 'HAPID' THEN 'Hapid'
-    WHEN UPPER(${code('Brand')}) LIKE 'M-%'
-      OR UPPER(${code('Brand')}) LIKE '%INJ%'
-      OR UPPER(${code('Brand')}) LIKE '%TAB%' THEN 'M Inj & Tab'
-    ELSE 'Others'
-  END`;

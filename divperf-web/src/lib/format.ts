@@ -34,6 +34,27 @@ export function money(n: number | null | undefined, opts: { decimals?: number } 
   return `${sign}${groupIndian(abs, 0)}`;
 }
 
+/**
+ * Rupees in lakhs, as the report states them under "(₹ L)" headers: "340.0".
+ * Tables use one decimal throughout.
+ */
+export function lakhs(n: number | null | undefined, decimals = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH;
+  const sign = n < 0 ? '−' : '';
+  return `${sign}${groupIndian(Math.abs(n) / LAKH, decimals)}`;
+}
+
+/** KPI tiles and summary tables: whole lakhs from 100 L ("5,439"), one decimal below ("9.7"). */
+export function lakhsAuto(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH;
+  return lakhs(n, Math.abs(n) / LAKH >= 100 ? 0 : 1);
+}
+
+/** Chart axis ticks in lakhs, one decimal: "1,000.0". */
+export function axisLakhs(n: number): string {
+  return lakhs(n, 1);
+}
+
 /** Full-precision money for tooltips and table exports: "₹17,50,000.00". */
 export function moneyFull(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return EM_DASH;
