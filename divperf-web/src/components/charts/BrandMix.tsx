@@ -2,16 +2,20 @@
  * The report's BRAND MIX: four pies — Dispatch, Collection, Secondary and RCPA
  * by brand — each labelled with slice shares and its own legend, as in Excel.
  * A measure with no values keeps its slot and says why, rather than vanishing.
+ *
+ * Dispatch shows its top brands plus "Others". Secondary and RCPA name brands
+ * differently from dispatch (WOSULIN CART, not WOSULIN CTG), so they show every
+ * brand they have — or only the brands chosen in the filter — each in its own
+ * colour, the same colour in both pies.
  */
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import type { EChartsOption } from 'echarts';
 import echarts from './echartsCore';
 import type { MixPanel } from '../../types/api';
-import { CHART_HEIGHT, FONT, INK_2, INK_3, MIX_COLORS, SURFACE, baseOption, lakhLabel, legend, tooltip } from './chartTheme';
+import {
+  CHART_HEIGHT, FONT, INK_2, INK_3, MIX_COLORS, SURFACE, baseOption, brandColors, lakhLabel, legend, tooltip,
+} from './chartTheme';
 import { ChartFrame } from './ChartFrame';
-
-/** The API's bucket for every brand outside the top few. */
-const OTHERS = 'Others';
 
 const MEASURES = [
   { key: 'disp', title: 'Dispatch mix by brand' },
@@ -20,27 +24,22 @@ const MEASURES = [
   { key: 'rcpa', title: 'RCPA mix by brand' },
 ] as const;
 
-function Pie({ title, labels, values, stale, emptyReason }: {
+function Pie({ title, note, labels, values, colors, stale, emptyReason }: {
   title: string;
+  /** A caveat shown under the title. */
+  note?: string;
   labels: string[];
   values: (number | null)[];
+  /** One colour per slice. */
+  colors: string[];
   stale: boolean;
   emptyReason: string;
 }) {
   const hasData = values.some((v) => v !== null && v > 0);
-  // The slices are the top dispatch brands plus "Others". When a measure falls
-  // almost entirely under Others, its feed names brands differently — say so,
-  // or a solid one-colour pie reads as a bug.
-  const total = values.reduce<number>((a, v) => a + (v !== null && v > 0 ? v : 0), 0);
-  const others = values[labels.indexOf(OTHERS)] ?? 0;
-  const note =
-    hasData && others !== null && others / total >= 0.99
-      ? 'None of it matches the top dispatch brands — this feed names brands differently.'
-      : undefined;
   const option: EChartsOption = {
     ...baseOption,
-    color: MIX_COLORS,
-    legend: legend(0),
+    // Many brands: the legend scrolls rather than covering the pie.
+    legend: { ...legend(0), type: 'scroll', itemGap: 12, pageIconSize: 10, pageTextStyle: { color: INK_2, fontSize: 10 } },
     tooltip: {
       ...tooltip('item'),
       formatter: (p) => {
@@ -55,7 +54,7 @@ function Pie({ title, labels, values, stale, emptyReason }: {
       {
         type: 'pie',
         radius: ['0%', '60%'],
-        center: ['50%', '46%'],
+        center: ['50%', '45%'],
         startAngle: 90,
         itemStyle: { borderColor: SURFACE, borderWidth: 1 },
         label: {
@@ -68,7 +67,11 @@ function Pie({ title, labels, values, stale, emptyReason }: {
         labelLine: { length: 6, length2: 4, lineStyle: { color: INK_3 } },
         // Tiny slices drop their label rather than collide.
         minShowLabelAngle: 8,
-        data: labels.map((name, i) => ({ name, value: values[i] ?? 0 })),
+        data: labels.map((name, i) => ({
+          name,
+          value: values[i] ?? 0,
+          itemStyle: { color: colors[i] },
+        })),
       },
     ],
   };
@@ -76,7 +79,7 @@ function Pie({ title, labels, values, stale, emptyReason }: {
   return (
     <ChartFrame
       title={title}
-      note={note}
+      note={hasData ? note : undefined}
       height={CHART_HEIGHT.mix}
       categories={labels}
       categoryLabel="Brand"
@@ -104,19 +107,28 @@ function Pie({ title, labels, values, stale, emptyReason }: {
 export function BrandMix({ mix, stale = false, collNote }: {
   mix: MixPanel;
   stale?: boolean;
-  /** Why collection has no brand split, when the server said. */
+  /** The caveat on collection by brand, from the server. */
   collNote?: string;
 }) {
+  // One colour per brand across the Secondary and RCPA pies.
+  const brand = brandColors([...mix.sec.labels, ...mix.rcpa.labels]);
+  const colorsFor = (key: (typeof MEASURES)[number]['key']) =>
+    key === 'sec' || key === 'rcpa'
+      ? mix[key].labels.map((l) => brand.get(l)!)
+      : mix[key].labels.map((_, i) => MIX_COLORS[i % MIX_COLORS.length]!);
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {MEASURES.map((m) => (
         <Pie
           key={m.key}
           title={m.title}
-          labels={mix.labels}
-          values={mix[m.key]}
+          labels={mix[m.key].labels}
+          values={mix[m.key].values}
+          colors={colorsFor(m.key)}
+          note={m.key === 'coll' ? collNote : undefined}
           stale={stale}
-          emptyReason={m.key === 'coll' && collNote ? collNote : 'No data for the selected period.'}
+          emptyReason="No data for the selected period."
         />
       ))}
     </div>

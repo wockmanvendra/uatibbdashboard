@@ -4,7 +4,7 @@
  * own user database.
  */
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiRequestError, requestOtp, verifyOtp } from '../lib/api';
 import { useAuthStore } from './authStore';
 import { OtpInput } from './OtpInput';
@@ -267,13 +267,20 @@ export function LoginPage() {
             You will see figures for your own territory — HQ, region, zone or division — as set in
             Infinity&rsquo;s field structure.
           </p>
+          <p className="mt-3 text-[12px] text-ink-3">
+            BU head?{' '}
+            <Link to="/login/bu-head" state={location.state} className="login-link">
+              Sign in with your password
+            </Link>
+          </p>
         </div>
       </main>
     </div>
   );
 }
 
-function BrandPanel() {
+/** The left-hand brand panel, shared with the BU head sign-in. */
+export function BrandPanel() {
   return (
     <aside className="login-brand rise-in">
       <img src="/wing_white.png" alt="" className="login-brand-watermark" />

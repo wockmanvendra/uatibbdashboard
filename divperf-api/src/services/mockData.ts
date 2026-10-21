@@ -15,11 +15,17 @@
  * Delete this file at Phase 2 once data/panels/* query the serving database.
  */
 import type {
+  CadreCounts,
   CnDetailRow,
   CreditNotePanel,
+  EffortFigures,
+  EffortMonth,
+  EffortPanel,
   GeoRow,
   KeyBrandRow,
+  ManpowerPanel,
   MixPanel,
+  RxPanel,
   TabResponse,
   TrendsPanel,
   YrMn,
@@ -137,27 +143,21 @@ export const AVAILABLE_MONTHS: YrMn[] = [
 export const OPEN_YR_MN: YrMn = 202608;
 export const DATA_VERSION = 'mock-a3f9c1';
 
-/** Stockists and SKUs for the Credit Note tab detail grids. */
-const STOCKISTS = [
-  ['0000030112', 'VIMAL PHARMA'],
-  ['0000029879', 'BHARATH MEDICAL & GENERAL AGENCIES'],
-  ['0000029741', 'SRI PARSHVA DRUG HOUSE'],
-  ['0000029297', 'AVENUES PHARMA DISTRIBUTORS P. LTD'],
-  ['0000031044', 'MEDIPLUS DISTRIBUTORS'],
-  ['0000028810', 'NEW ASHIRWAD AGENCIES'],
-  ['0000032015', 'SHREE BALAJI MEDICOS'],
-  ['0000030577', 'KRISHNA PHARMA DISTRIBUTORS'],
-] as const;
+/**
+ * HQs and SKUs for the Credit Note tab detail grids, shaped as the live ones
+ * are: an HQ by territory code and name, a SKU by product code and its brand.
+ */
+const CN_HQS = HQS.slice(0, 8).map((h) => [h.code, h.name] as const);
 
 const SKUS = [
-  ['000000000000503868', 'Methycobal 500mcg Tab 10x10'],
-  ['000000000000404845', 'Wosulin 30/70 100 IU 5x3ml Cart'],
-  ['000000000000501122', 'Spasmo Proxyvon Plus Cap 10x10'],
-  ['000000000000502341', 'Glaritus 100IU/ml 3ml Cart'],
-  ['000000000000505590', 'Emrok 800mg Tab 1x10'],
-  ['000000000000500713', 'Decdan 0.5mg Tab 10x20'],
-  ['000000000000506612', 'Hapid 100mg Tab 1x10'],
-  ['000000000000503001', 'Methycobal 500mcg Inj 5x1ml'],
+  ['503868', 'METHYCOBAL TAB'],
+  ['404845', 'WOSULIN'],
+  ['501122', 'SPASMO PLUS'],
+  ['502341', 'GLARITUS'],
+  ['505590', 'EMROK'],
+  ['500713', 'DECDAN TAB'],
+  ['506612', 'HAPID'],
+  ['503001', 'METHYCOBAL INJ'],
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -477,7 +477,120 @@ function buildTrends(f: MockFilters, series: string[]): TrendsPanel {
   if (want.has('cnSr')) out.cnSr = pick((x) => x.cnSr);
   if (want.has('cnPd')) out.cnPd = pick((x) => x.cnPd);
   if (want.has('cnPct')) out.cnPct = pick((x) => M.cnPct(x.cn, x.gross));
+  if (want.has('rxns')) out.rxns = months.map((m) => mockRx(m).rxns);
+  if (want.has('rxber')) out.rxber = months.map((m) => mockRx(m).rxber);
+  if (want.has('rxPd')) out.rxPd = months.map((m) => M.perPrescriber(mockRx(m).rxns, mockRx(m).rxber));
+  if (want.has('leftTm')) out.leftTm = months.map((m) => mockLeft(m).tm);
+  if (want.has('leftRm')) out.leftRm = months.map((m) => mockLeft(m).rm);
+  if (want.has('leftZsm')) out.leftZsm = months.map((m) => mockLeft(m).zsm);
   return out;
+}
+
+/** Prescriptions and prescribers in a month: about 1,500 Rx from 280 doctors. */
+function mockRx(m: number): { rxns: number; rxber: number } {
+  const r = rng(hash(`rx|${m}`));
+  return { rxns: Math.round(1_350 + r() * 350), rxber: Math.round(240 + r() * 90) };
+}
+
+function buildRx(f: MockFilters): RxPanel {
+  const months = monthRange(f.from, f.to);
+  const sum = (ms: number[], k: 'rxns' | 'rxber') => ms.reduce((a, m) => a + mockRx(m)[k], 0);
+  const figures = (ms: number[]) => {
+    const rxns = sum(ms, 'rxns');
+    const rxber = sum(ms, 'rxber');
+    const perMonth = M.prescribersPerMonth(rxber, ms.length);
+    return { rxns, rxber: perMonth, pdm: M.perPrescriber(rxns, perMonth) };
+  };
+  const cur = figures(months);
+  const prior = figures(months.map(priorYear));
+  return {
+    rxns: { value: cur.rxns, gr: M.grPct(cur.rxns, prior.rxns) },
+    rxber: { value: cur.rxber, gr: M.grPct(cur.rxber, prior.rxber) },
+    pdm: { value: cur.pdm, gr: M.grPct(cur.pdm, prior.pdm) },
+    from: months[0] ?? null,
+    to: months[months.length - 1] ?? null,
+  };
+}
+
+/** Leavers in a month, by cadre: a handful of TMs, the odd RM or ZSM. */
+function mockLeft(m: number): CadreCounts {
+  const r = rng(hash(`left|${m}`));
+  return { tm: Math.floor(r() * 5), rm: Math.floor(r() * 2.4), zsm: Math.floor(r() * 1.4) };
+}
+
+function buildManpower(f: MockFilters): ManpowerPanel {
+  const months = monthRange(f.from, f.to);
+  const left: CadreCounts = { tm: 0, rm: 0, zsm: 0 };
+  for (const m of months) {
+    const l = mockLeft(m);
+    left.tm += l.tm;
+    left.rm += l.rm;
+    left.zsm += l.zsm;
+  }
+  const r = rng(hash(`joined|${f.from}|${f.to}`));
+  const joined: CadreCounts = {
+    tm: left.tm + Math.floor(r() * 4),
+    rm: Math.max(0, left.rm + Math.floor(r() * 3) - 1),
+    zsm: Math.floor(r() * 2),
+  };
+  // Split each cadre's leavers across the three tenure bands.
+  const tenure = (n: number) => {
+    const under6m = Math.round(n * 0.35);
+    const m6to12 = Math.round(n * 0.25);
+    return { under6m, m6to12, over1y: n - under6m - m6to12 };
+  };
+  return {
+    left,
+    joined,
+    leftByTenure: { tm: tenure(left.tm), rm: tenure(left.rm), zsm: tenure(left.zsm) },
+  };
+}
+
+/** A month's effort sums: about 170 territories, 21,000 doctors on the lists. */
+function mockEffort(m: number) {
+  const r = rng(hash(`effort|${m}`));
+  const tc = 21_000;
+  const met = Math.round(tc * (0.78 + r() * 0.1));
+  const fd = Math.round(3_600 + r() * 200);
+  return { tc, a: 3_500, b: 8_700, met, fcovW: tc * (60 + r() * 15), calls: Math.round(fd * (9 + r())), fd, fdTerr: 162 };
+}
+
+function buildEffort(f: MockFilters): EffortPanel {
+  const figures = (ms: number[]): EffortFigures => {
+    const s = ms.map(mockEffort).reduce(
+      (a, e) => ({
+        tc: a.tc + e.tc, a: a.a + e.a, b: a.b + e.b, met: a.met + e.met, fcovW: a.fcovW + e.fcovW,
+        calls: a.calls + e.calls, fd: a.fd + e.fd, fdTerr: a.fdTerr + e.fdTerr,
+      }),
+      { tc: 0, a: 0, b: 0, met: 0, fcovW: 0, calls: 0, fd: 0, fdTerr: 0 },
+    );
+    return {
+      drs: M.perMonth(s.tc, ms.length),
+      aPlus: null,
+      a: M.perMonth(s.a, ms.length),
+      b: M.perMonth(s.b, ms.length),
+      c: M.perMonth(s.tc - s.a - s.b, ms.length),
+      drsMet: M.perMonth(s.met, ms.length),
+      coveragePct: M.pct(s.met, s.tc),
+      drsMetRtFrq: null,
+      rtFrqCoveragePct: M.ratio(s.fcovW, s.tc),
+      callAvg: M.callAverage(s.calls, s.fd),
+      drsMissed: null,
+      missedRtFrq: null,
+      fieldDays: M.ratio(s.fd, s.fdTerr),
+    };
+  };
+  // Missed doctors: 6 HQs x 4 doctors a month, as the missed-doctor list has them.
+  const months = monthRange(f.from, f.to);
+  const missedPerMonth = 24;
+  return {
+    total: { ...figures(months), drsMissed: missedPerMonth * months.length },
+    months: months.map((m): EffortMonth => ({ yrMn: m, label: label(m), ...figures([m]), drsMissed: missedPerMonth })),
+    missedByCategory: {
+      labels: ['A', 'B', 'C'],
+      values: [6, 12, 6].map((n) => n * months.length),
+    },
+  };
 }
 
 function buildMix(f: MockFilters, dimension: MixPanel['dimension']): MixPanel {
@@ -499,14 +612,22 @@ function buildMix(f: MockFilters, dimension: MixPanel['dimension']): MixPanel {
   const share = (base: number, i: number, wobble: number) =>
     round2(base * (weights[i]! / wSum) * wobble);
 
+  // Secondary and RCPA: every mock brand, largest first, as the live feed has them.
+  const everyBrand = (base: number) => {
+    const w = BRANDS.map(() => 0.2 + r() * 1.8);
+    const sum = w.reduce((a, b) => a + b, 0);
+    const slices = BRANDS.map((b, i) => ({ label: b, value: round2(base * (w[i]! / sum)) }))
+      .sort((a, b) => b.value - a.value);
+    return { labels: slices.map((s) => s.label), values: slices.map((s) => s.value) };
+  };
+
   return {
     dimension,
-    labels,
-    disp: labels.map((_, i) => share(total?.disp ?? 0, i, 1)),
-    // DUMMY: coll/sec/rcpa have no brand grain in the source. See §4.4.
-    coll: labels.map((_, i) => share(total?.coll ?? 0, i, 0.9 + r() * 0.2)),
-    sec: labels.map((_, i) => share(total?.sec ?? 0, i, 0.9 + r() * 0.2)),
-    rcpa: labels.map((_, i) => share(total?.rcpaActual ?? 0, i, 0.9 + r() * 0.2)),
+    disp: { labels, values: labels.map((_, i) => share(total?.disp ?? 0, i, 1)) },
+    // DUMMY: coll has no brand grain in the source. See §4.4.
+    coll: { labels, values: labels.map((_, i) => share(total?.coll ?? 0, i, 0.9 + r() * 0.2)) },
+    sec: everyBrand(total?.sec ?? 0),
+    rcpa: everyBrand(total?.rcpaActual ?? 0),
   };
 }
 
@@ -541,7 +662,7 @@ function buildCnDetail(f: MockFilters, total: NonNullable<ReturnType<typeof roll
   };
   return {
     columns: CN_DETAIL_COLUMNS,
-    byStockist: make(STOCKISTS, 'stockist'),
+    byHq: make(CN_HQS, 'hq'),
     bySku: make(SKUS, 'sku'),
   };
 }
@@ -584,6 +705,9 @@ export function buildMockTab(tabId: string, f: MockFilters): TabResponse {
       queryMs: 0,
       priorFrom: prior ? priorFrom : null,
       priorTo: prior ? priorTo : null,
+      // The mock invents sales for every month, so CN% covers the whole period.
+      cnPctFrom: f.from,
+      cnPctTo: f.to,
       // The mock invents every panel, so nothing is reported as unavailable.
       // That is precisely the difference between this and the live path.
       unavailable: [],
@@ -649,9 +773,18 @@ export function buildMockTab(tabId: string, f: MockFilters): TabResponse {
   if (has('mix')) {
     res.mix = buildMix(f, tab.mixDimension);
   }
+  if (has('manpower')) {
+    res.manpower = empty ? null : buildManpower(f);
+  }
+  if (has('rx') && !empty) {
+    res.rx = buildRx(f);
+  }
+  if (has('effort')) {
+    res.effort = empty ? null : buildEffort(f);
+  }
   if (has('cnDetail')) {
     res.cnDetail = empty
-      ? { columns: CN_DETAIL_COLUMNS, byStockist: [], bySku: [] }
+      ? { columns: CN_DETAIL_COLUMNS, byHq: [], bySku: [] }
       : buildCnDetail(f, c);
   }
 

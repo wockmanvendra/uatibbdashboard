@@ -28,19 +28,28 @@ describe('cache keys', () => {
   });
 
   it('puts the scope in the key so two scopes never share an entry (I6)', () => {
-    const asm = tabKey('aaaa1111', 'division-performance', base);
-    const national = tabKey('bbbb2222', 'division-performance', base);
+    const asm = tabKey('aaaa1111', 'division-performance', base, 'v1');
+    const national = tabKey('bbbb2222', 'division-performance', base, 'v1');
     expect(asm).not.toBe(national);
     expect(asm).toContain('aaaa1111');
   });
 
   it('refuses to build a key without a usable scope segment', () => {
-    expect(() => tabKey('', 'division-performance', base)).toThrow(/I6/);
+    expect(() => tabKey('', 'division-performance', base, 'v1')).toThrow(/I6/);
     // A colon would let a crafted scope forge a different key shape.
-    expect(() => tabKey('a:b', 'division-performance', base)).toThrow(/I6/);
+    expect(() => tabKey('a:b', 'division-performance', base, 'v1')).toThrow(/I6/);
   });
 
   it('namespaces every key so a deploy can invalidate everything', () => {
-    expect(tabKey('s', 'division-performance', base)).toMatch(/^dash:v1:/);
+    expect(tabKey('s', 'division-performance', base, 'v1')).toMatch(/^dash:v1:/);
+  });
+});
+
+describe('tabKey and data reloads', () => {
+  const f = { from: 202604, to: 202608, division: [], brand: [], zone: [], region: [], hq: [] };
+  it('changes when the data version does, so a reload is never served from cache', () => {
+    expect(tabKey('s', 'division-performance', f, '202609-aaaa')).not.toBe(
+      tabKey('s', 'division-performance', f, '202609-bbbb'),
+    );
   });
 });

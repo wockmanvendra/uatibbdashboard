@@ -9,6 +9,7 @@ import { useDataVersionSync } from './queries/useDataVersion';
 import { useFilterStore } from './store/filterStore';
 import { useAuthStore } from './auth/authStore';
 import { LoginPage } from './auth/LoginPage';
+import { BuHeadLoginPage } from './auth/BuHeadLoginPage';
 
 export function App() {
   const signedIn = useAuthStore((s) => s.token !== null);
@@ -17,6 +18,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/login/bu-head" element={<BuHeadLoginPage />} />
         <Route path="*" element={<ToLogin />} />
       </Routes>
     );

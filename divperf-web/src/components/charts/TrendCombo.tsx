@@ -17,6 +17,7 @@ import {
   baseOption, categoryAxis, formatSeriesValue, grid, legend, moneyAxis, ratioAxis, tooltip,
 } from './chartTheme';
 import { ChartFrame, type TableSeries } from './ChartFrame';
+import { linearTrend } from '../../lib/trend';
 
 export interface BarSeriesSpec {
   name: string;
@@ -67,22 +68,36 @@ interface TrendComboProps {
   lines?: LineSeriesSpec[];
   height?: number;
   stale?: boolean;
+  /**
+   * Draw a dashed linear trendline through each bar series, in its colour —
+   * Excel's "linear trendline". Kept out of the legend, tooltip and table:
+   * it is a guide to the eye, not a figure.
+   */
+  trend?: boolean;
 }
 
+const TREND_SUFFIX = ' trend';
+
 export function TrendCombo({
-  title, note, labels, bars, lines = [], height = CHART_HEIGHT.trend, stale,
+  title, note, labels, bars, lines = [], height = CHART_HEIGHT.trend, stale, trend = false,
 }: TrendComboProps) {
+  const trends = trend
+    ? bars
+        .map((b) => ({ name: b.name + TREND_SUFFIX, data: linearTrend(b.data), color: b.color }))
+        .filter((t) => t.data.some((v) => v !== null))
+    : [];
   const percentNames = new Set(lines.filter((l) => l.isPercent).map((l) => l.name));
   const linesArePercent = lines.length > 0 && lines.every((l) => l.isPercent);
 
   const option: EChartsOption = {
     ...baseOption,
     grid: grid({ bottom: 30 }),
-    legend: legend(0),
+    // Only the real series in the legend; trendlines follow their bars' colours.
+    legend: { ...legend(0), data: [...bars.map((b) => b.name), ...lines.map((l) => l.name)] },
     tooltip: {
       ...tooltip('axis'),
       formatter: (params) => {
-        const rows = toTooltipRows(params);
+        const rows = toTooltipRows(params).filter((r) => !r.seriesName.endsWith(TREND_SUFFIX));
         const head = rows[0]?.axisValueLabel ?? '';
         const body = rows
           .map(
@@ -117,6 +132,18 @@ export function TrendCombo({
         lineStyle: { ...LINE_STYLE.lineStyle, color: l.color },
         emphasis: { focus: 'series' as const },
       })),
+      ...trends.map((t) => ({
+        type: 'line' as const,
+        name: t.name,
+        data: t.data,
+        yAxisIndex: 0,
+        symbol: 'none',
+        smooth: false,
+        silent: true,
+        z: 4,
+        itemStyle: { color: t.color },
+        lineStyle: { color: t.color, width: 1.5, type: 'dashed' as const },
+      })),
     ],
   };
 
@@ -131,7 +158,14 @@ export function TrendCombo({
   );
 
   return (
-    <ChartFrame title={title} note={note} height={height} categories={labels} series={tableSeries} stale={stale}>
+    <ChartFrame
+      title={title}
+      note={trends.length ? [note, 'Dashed lines: linear trend.'].filter(Boolean).join(' ') : note}
+      height={height}
+      categories={labels}
+      series={tableSeries}
+      stale={stale}
+    >
       {hasData ? (
         <ReactEChartsCore
           echarts={echarts}

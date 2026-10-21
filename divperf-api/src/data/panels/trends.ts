@@ -19,10 +19,11 @@ export interface TrendPoint {
   disp: number | null;
   gross: number | null;
   coll: number | null;
-  cn: number | null;
-  inventory: number | null;
   sec: number | null;
   rcpa: number | null;
+  /** Prescriptions and prescribers in the month. */
+  rxns: number | null;
+  rxber: number | null;
 }
 
 export interface TrendResult {
@@ -53,10 +54,10 @@ export async function fetchTrend(db: Db, scope: Scope, filters: PanelFilters): P
       disp: num(r.disp),
       gross: num(r.gross),
       coll: num(r.coll),
-      cn: num(r.cn),
-      inventory: num(r.inventory),
       sec: num(r.sec),
       rcpa: num(r.rcpa),
+      rxns: num(r.rxns),
+      rxber: num(r.rxber),
     }),
   );
 

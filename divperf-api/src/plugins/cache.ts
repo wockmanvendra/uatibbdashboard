@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import { config } from '../config.js';
 import type { CacheClient } from '../cache/CacheClient.js';
 import { MemoryCache } from '../cache/MemoryCache.js';
+import { NoCache } from '../cache/NoCache.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -18,7 +19,10 @@ declare module 'fastify' {
 const plugin: FastifyPluginAsync = async (app) => {
   let client: CacheClient;
 
-  if (config.CACHE_DRIVER === 'redis') {
+  if (config.CACHE_DRIVER === 'none') {
+    client = new NoCache();
+    app.log.warn('cache driver: none — every request reads the warehouse directly.');
+  } else if (config.CACHE_DRIVER === 'redis') {
     // Phase 3. Imported lazily so ioredis is not loaded when unused.
     const { RedisCache } = await import('../cache/RedisCache.js');
     client = new RedisCache(config.REDIS_URL!);

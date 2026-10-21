@@ -44,7 +44,7 @@ function columnsFor(grain: GeoTablePanel['grain']): ColumnSpec[] {
     { index: 8, label: 'Credit note', format: 'money' },
     { index: 9, label: 'CN%', format: 'percent' },
     { index: 10, label: 'Sec', format: 'money' },
-    { index: 11, label: 'Inventory value', format: 'money' },
+    { index: 11, label: 'Closing inventory', format: 'money' },
     { index: 12, label: 'RCPA', format: 'money' },
     { index: 13, label: 'RCPA as % to Sec', format: 'percent' },
   ];
@@ -65,10 +65,13 @@ export function GeoTable({
   data,
   loading,
   stale,
+  note,
 }: {
   data?: GeoTablePanel;
   loading: boolean;
   stale: boolean;
+  /** A caveat under the grid, e.g. which months CN% covers. */
+  note?: string;
 }) {
   const grain = data?.grain ?? 'zone';
   const columns = columnsFor(grain);
@@ -116,6 +119,7 @@ export function GeoTable({
           hideEmptyColumns
         />
       )}
+      {note && data && <p className="px-3 py-2 text-[11px] text-[var(--xl-muted)]">{note}</p>}
     </Panel>
   );
 }

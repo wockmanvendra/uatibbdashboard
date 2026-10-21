@@ -1,30 +1,47 @@
 /**
  * The KPI band: one query covering both windows, feeding Primary, Secondary,
- * RCPA, Inventory and CN & O/S.
+ * RCPA, Inventory, and the O/S and gross sales of the CN & O/S card (its credit
+ * notes come from their own view — creditNotes.ts).
  *
  * Five panels from one round trip: against Synapse a round trip costs a second,
  * so the measures every panel needs are fetched together.
  */
 import type { Db } from '../db.js';
-import { DATE_KEY, DIMENSION, MEASURE_SELECT, SOURCE, code, num, type MeasureRow } from '../sqlFragments.js';
+import {
+  BALANCE_SELECT, DATE_KEY, DIMENSION, MEASURE_SELECT, SOURCE, closingMonth, code, num,
+  type BalanceRow, type MeasureRow,
+} from '../sqlFragments.js';
 import { twoWindowPredicate, splitWindows, type WindowedRow } from './shared.js';
 import { buildPredicate, type PanelFilters } from '../queryBuilder.js';
 import type { Scope } from '../../plugins/scope.js';
 
-type Row = MeasureRow & WindowedRow & { rcpa_as_of: number | null };
+type Row = MeasureRow & BalanceRow & WindowedRow & {
+  rcpa_as_of: number | null;
+  rx_from: number | null;
+  rx_to: number | null;
+};
 
 export interface Totals {
   tgt: number | null;
   disp: number | null;
   gross: number | null;
   coll: number | null;
-  cn: number | null;
+  /** Collection split by brand (COLLECTION_MATERIAL), net of GST. */
+  collMat: number | null;
+  /** Closing balances: the value in the period's last month. */
   os: number | null;
   inventory: number | null;
   sec: number | null;
   rcpa: number | null;
   /** Newest month with any RCPA in the window — the "as of" label. */
   rcpaAsOf: number | null;
+  /** Prescriptions and prescriber-months (summed), and the months with Rx data. */
+  rxns: number | null;
+  rxber: number | null;
+  rxMonths: number;
+  /** First and last month in the window with Rx data. */
+  rxFrom: number | null;
+  rxTo: number | null;
   srcRows: number;
 }
 
@@ -43,12 +60,17 @@ const toTotals = (r: Row | null): Totals | null =>
         disp: num(r.disp),
         gross: num(r.gross),
         coll: num(r.coll),
-        cn: num(r.cn),
+        collMat: num(r.coll_mat),
         os: num(r.os),
         inventory: num(r.inventory),
         sec: num(r.sec),
         rcpa: num(r.rcpa),
         rcpaAsOf: num(r.rcpa_as_of),
+        rxns: num(r.rxns),
+        rxber: num(r.rxber),
+        rxMonths: num(r.rx_months) ?? 0,
+        rxFrom: num(r.rx_from),
+        rxTo: num(r.rx_to),
         srcRows: num(r.src_rows) ?? 0,
       };
 
@@ -66,11 +88,14 @@ export async function fetchTotals(
       `SELECT
     ${winCase} AS win,
     ${MEASURE_SELECT},
-    MAX(CASE WHEN RCPA_VALUE <> 0 THEN ${DATE_KEY} END) AS rcpa_as_of
+    ${BALANCE_SELECT},
+    MAX(CASE WHEN RCPA_VALUE <> 0 THEN ${DATE_KEY} END) AS rcpa_as_of,
+    MIN(CASE WHEN DR_TOT <> 0 THEN ${DATE_KEY} END) AS rx_from,
+    MAX(CASE WHEN DR_TOT <> 0 THEN ${DATE_KEY} END) AS rx_to
   FROM ${SOURCE}
   WHERE ${where}
   GROUP BY ${winCase}`,
-      params,
+      { ...params, ...closingMonth(filters.to) },
     ),
     countUnassigned(db, scope, filters),
   ]);

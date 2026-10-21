@@ -122,15 +122,20 @@ export interface LoginAttempt {
   status: 'success' | 'failed';
   failureReason?: string | null;
   ip?: string | null;
+  /** How they signed in: OTP (field force, the default) or password (BU heads). */
+  loginMethod?: 'otp' | 'password';
 }
 
 /** Never throws: a logging failure must not block or mask the sign-in result. */
 export async function recordLogin(a: LoginAttempt, onError: (err: unknown) => void): Promise<void> {
   try {
     await userDb().query(
-      `INSERT INTO login_history (user_id, name, mobileno, usertype, status, failure_reason, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [a.userId ?? null, a.name ?? null, a.mobileno, a.usertype ?? null, a.status, a.failureReason ?? null, a.ip ?? null],
+      `INSERT INTO login_history (user_id, name, mobileno, usertype, status, failure_reason, ip_address, login_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        a.userId ?? null, a.name ?? null, a.mobileno, a.usertype ?? null, a.status,
+        a.failureReason ?? null, a.ip ?? null, a.loginMethod ?? 'otp',
+      ],
     );
   } catch (err) {
     onError(err);

@@ -15,6 +15,11 @@ const bool = (def: boolean) =>
 const schema = z
   .object({
     PORT: z.coerce.number().int().positive().default(8787),
+    /**
+     * Address to listen on. 0.0.0.0 reaches the network; 127.0.0.1 keeps the
+     * API on this machine, behind the web app's /api proxy.
+     */
+    HOST: z.string().default('0.0.0.0'),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     CORS_ORIGIN: z.string().default('http://localhost:5174,http://localhost:5173'),
@@ -40,16 +45,114 @@ const schema = z
     SQL_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 
     /**
-     * The one table every dashboard figure is read from, as schema.table.
-     * Interpolated into SQL, so it must be a plain two-part identifier.
+     * The table every dashboard figure is read from, as schema.table — all but
+     * credit notes. Interpolated into SQL, so it must be a plain two-part
+     * identifier.
      */
     DASHBOARD_TABLE: z
       .string()
       .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'DASHBOARD_TABLE must look like schema.table')
       .default('Infinity.Infinity_Reports'),
 
+    /**
+     * Credit notes, split Exp / SR / PD, by division, territory, product and
+     * month. Interpolated into SQL like DASHBOARD_TABLE.
+     */
+    CN_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'CN_TABLE must look like schema.table')
+      .default('Infinity.VW_Credit_Note_Details'),
+
+    /** SAP HR leavers and joiners, one row per person. Interpolated like DASHBOARD_TABLE. */
+    HR_EXIT_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'HR_EXIT_TABLE must look like schema.table')
+      .default('Infinity.VW_Exit_Details'),
+    HR_HIRING_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'HR_HIRING_TABLE must look like schema.table')
+      .default('Infinity.VW_Hiring_Details'),
+
+    /**
+     * Which HR cost centres (KOSTL) make up each division, as
+     * "division:costCentre,costCentre;division:…". The HR views carry no
+     * division code, only the cost centre. The default holds the pairs
+     * confirmed against Infinity's field structure; a division without an
+     * entry shows attrition as unavailable rather than as zero.
+     */
+    HR_DIVISION_COST_CENTRES: z
+      .string()
+      .default('85:1000EM68;A5:1000EM75')
+      .transform((raw, ctx) => {
+        const map: Record<string, string[]> = {};
+        for (const part of raw.split(';').map((p) => p.trim()).filter(Boolean)) {
+          const [division, centres] = part.split(':').map((p) => p.trim());
+          const list = (centres ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+          if (!division || list.length === 0 || !list.every((c) => /^[A-Za-z0-9]+$/.test(c))) {
+            ctx.addIssue({ code: 'custom', message: `HR_DIVISION_COST_CENTRES: bad entry "${part}"` });
+            return z.NEVER;
+          }
+          map[division] = list;
+        }
+        return map;
+      }),
+
+    /**
+     * Doctor coverage and call effort, one row per location and month (all
+     * nvarchar). Interpolated like DASHBOARD_TABLE.
+     */
+    EFFORT_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'EFFORT_TABLE must look like schema.table')
+      .default('dbo.infinity_effort_data'),
+
+    /**
+     * The effort data's division names, by division code, as
+     * "code:NAME;code:NAME". The effort data names a division but carries no
+     * code. A name listed for more than one code (RESEARCH covers 02 and 84)
+     * is split by its territories' codes; a division without an entry shows
+     * effort as unavailable rather than as zero.
+     */
+    EFFORT_DIVISIONS: z
+      .string()
+      .default('85:BIOSCIENCES;A5:RESPIRATORY;78:BIOPHARMA;A7:SPECIALITY;A8:AESTHETICS;83:PHARMA;02:RESEARCH;84:RESEARCH')
+      .transform((raw, ctx) => {
+        const map: Record<string, string> = {};
+        for (const part of raw.split(';').map((p) => p.trim()).filter(Boolean)) {
+          const [division, name] = part.split(':').map((p) => p.trim());
+          if (!division || !name || !/^[A-Za-z0-9]+$/.test(division)) {
+            ctx.addIssue({ code: 'custom', message: `EFFORT_DIVISIONS: bad entry "${part}"` });
+            return z.NEVER;
+          }
+          map[division] = name;
+        }
+        return map;
+      }),
+
+    /**
+     * One row per doctor, territory and month, with the TM's, RM's and ZSM's
+     * visit counts. A doctor with tmVisitCounts = 0 was missed. Interpolated
+     * like DASHBOARD_TABLE.
+     */
+    VISIT_SUMMARY_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'VISIT_SUMMARY_TABLE must look like schema.table')
+      .default('dbo.infinity_Visit_Summary'),
+
+    /** Budgeted TMs per division and HQ (no month). Interpolated like DASHBOARD_TABLE. */
+    BUDGET_TM_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'BUDGET_TM_TABLE must look like schema.table')
+      .default('Infinity.budgeted_tm'),
+    /** TMs in place per division and HQ — PCPM's divisor. Interpolated like DASHBOARD_TABLE. */
+    EMP_COUNT_TABLE: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'EMP_COUNT_TABLE must look like schema.table')
+      .default('Infinity.vw_emp_count'),
+
     REDIS_URL: z.string().optional(),
-    CACHE_DRIVER: z.enum(['memory', 'redis']).default('memory'),
+    /** none: no response cache — every request reads the warehouse. */
+    CACHE_DRIVER: z.enum(['memory', 'redis', 'none']).default('memory'),
 
     AZURE_TENANT_ID: z.string().optional(),
     AZURE_API_AUDIENCE: z.string().optional(),

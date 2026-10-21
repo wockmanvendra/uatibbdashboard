@@ -144,16 +144,62 @@ interface from Phase 2 and wire Redis in Phase 3.
 
 ## 4. Data layer
 
-**As built (2026-09-29): one source table.** Every dashboard figure now comes
+**As built (2026-10-01): credit notes from their own view.**
+`Infinity.VW_Credit_Note_Details` (`CN_TABLE`) holds every credit-note figure,
+split Breakage/Expiry, Sales Return and Price Difference (the three always sum
+to `Total_CreditNote`), by `Division_Code` / `TERRITORY_CODE` / `Product_code`
+/ `yearMonth`, from Apr-2025. It replaces `CR_NOTES`, which is a different
+sales-side figure (e.g. Aug-2026: 366.75 L in `CR_NOTES`, 142.92 L in the view).
+Zone and region reach a credit note through `(Division_Code, SAP_Code)` in
+`Infinity_Reports` — 601 territories, each in exactly one zone and region — and
+every credit note of the dashboard's divisions matches one (Apr–Sep 2026: 1,271
+L of 1,271 L). The view also holds divisions with no sales rows (25, 26, 82…);
+an all-divisions user's figures are held to the divisions the sales table covers.
+A brand filter matches the products carrying the brand under either name (sales
+and secondary rows name 39 products differently). `MATERIAL_DESC` does not belong
+to its `Product_code` (one code carries a dozen unrelated descriptions), so a SKU
+is named by its brand. CN% stays on `GROSS_SALES`, and its numerator counts only
+the period's months that have gross sales (`meta.cnPctFrom..cnPctTo`): credit
+notes start in Apr-2025 and sales in Apr-2026, so for Jan–Aug 2026 division 85
+showed 71.78 L of credit notes against Apr–Aug sales, 1.66%, where the like-for-
+like figure is 32.31 L, 0.75%. The values still cover the whole period, and the
+screen says which months the % covers. The queries are in
+`divperf-api/src/data/panels/creditNotes.ts`; the scope applies through the same
+`buildPredicate` as the sales queries.
+
+**Field force and prescriptions (2026-10-05).** Attrition and new joiners come
+from the SAP HR views `Infinity.VW_Exit_Details` (442 leavers) and
+`Infinity.VW_Hiring_Details` (496 joiners), Apr-2025 to Sep-2026, one row per
+person (`divperf-api/src/data/panels/manpower.ts`). Cadre is `EMP_TYPE`, which
+agrees with Infinity's role for all 94 people found in both. A leaver counts in
+the month of `DOL`: HR's `MONYR` is the month the exit was processed and lags
+`DOL` for 258 of 442. Ageing is `DOL − DOJ` by calendar dates (HR's `TEN_RANGE`
+rounds to completed months). The views carry a cost centre, not a division,
+zone, region or HQ code — `STEXT2`/`NAME1` are free-text org units and cities —
+so division comes through `HR_DIVISION_COST_CENTRES` and the panel is
+whole-division only; narrower views, brand filters and unmapped divisions get
+the reason instead of a misleading figure. Prescriptions are `RXN_TOT` (Rxns)
+and `DR_TOT` (Rxber) in `Infinity_Reports`, per HQ × SKU × month, Jan-2026
+only so far; Rxber for a period is its per-month average over the months with
+Rx data, since summing months would count a doctor once per month.
+
+**Balances are closing values (2026-10-01).** `OS`, `STOCK` and `GIT` are
+month-end positions, not monthly flows — Sep-2026, a day into the month, holds
+823 L of O/S and 2,727 L of stock for division 85. They had been summed across
+the period, so Apr–Aug showed 4,008 L of O/S and 9,397 L of inventory, five
+month-ends added together. A period's O/S and inventory are now the values in
+its last month (`BALANCE_SELECT`, bound as `@closeMonth`): 874 L and 2,887 L.
+
+**As built (2026-09-29): one source table.** Every other dashboard figure comes
 from `Infinity.Infinity_Reports` in the same Synapse database
-(`WH_SAPDataAnalytics`) — sales, target, collection, credit notes, outstanding,
+(`WH_SAPDataAnalytics`) — sales, target, collection, outstanding,
 stock, secondary and RCPA, by `Division_Code` / `ZONE_CODE` / `REGION_CODE` /
 `SAP_Code` (HQ) / `Brand` / `yearMonth`. The sources described below —
 `eflash.VW_SALES_PRIMARY_ALL_HIST_AZURE`, `dbo.All_EmployeeData`,
 `dbo.RCPA_New`, `dbo.SecondaryData_test` — are no longer read. The column
 mapping is in `divperf-api/src/data/sqlFragments.ts`. What the table lacks is
-left blank with a reason: PCPM (no headcount), RCPA plan, the CN split,
-collection by brand (customer-level), and inventory below division
+left blank with a reason: PCPM (no headcount), RCPA plan, collection by brand
+(customer-level), and inventory below division
 (plant-level). Its sales measures start at Apr-2026, so sales growth is blank
 until a prior year exists; secondary starts Apr-2025. Sales and secondary name
 some products differently (`WOSULIN CTG` vs `WOSULIN CART`), so brand-level
@@ -637,7 +683,9 @@ grain. Do not join on it naively.
 
 `CR_NOTES` in the primary view remains a single total and cannot be split. Build
 the CN panel against a `fact_credit_note` table with a `cn_type_key`, and stub
-the loader until the Excel ingestion is defined.
+the loader until the Excel ingestion is defined. **Superseded 2026-10-01:** the
+split now comes from `Infinity.VW_Credit_Note_Details` (§4, as built), by
+territory and product rather than stockist.
 
 ### 4.5 Warehouse model (Synapse)
 
@@ -973,7 +1021,9 @@ has **already been applied** to the Disp figure. That is a legitimate way to
 read the report, but it means Disp + CN must never be presented as if it summed
 to gross. `CN%` is therefore computed against `GROSS_SALES`
 (= `NET_SALES + CR_NOTES`), not against Disp, so the percentage means "what
-share of what we billed came back".
+share of what we billed came back". Since 2026-10-01 the credit notes shown
+come from `VW_Credit_Note_Details`, not `CR_NOTES`, so the CN on screen is not
+the deduction inside `NET_SALES`; the denominator is still `GROSS_SALES`.
 
 **Also resolved by the user, 2026-08-11:**
 

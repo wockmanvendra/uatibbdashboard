@@ -29,7 +29,8 @@ export const metaRoutes: FastifyPluginAsync = async (app) => {
       reply.header('cache-control', 'no-cache');
       return cached;
     }
-    const body: VersionResponse = await getDataVersion();
+    const { dataVersion, openYrMn, updatedAt } = await getDataVersion();
+    const body: VersionResponse = { dataVersion, openYrMn, updatedAt };
     await app.cache.set(versionKey(), body, 60);
     reply.header('cache-control', 'no-cache');
     return body;
@@ -61,8 +62,9 @@ export const metaRoutes: FastifyPluginAsync = async (app) => {
       { id: 'net_sales', label: 'Dispatch', agg: 'sum', format: 'currency' },
       { id: 'collection', label: 'Collection', agg: 'sum', format: 'currency' },
       { id: 'cr_notes', label: 'Credit note', agg: 'sum', format: 'currency' },
-      { id: 'os', label: 'Outstanding', agg: 'sum', format: 'currency' },
-      { id: 'inventory', label: 'Inventory', agg: 'sum', format: 'currency' },
+      // Balances: a period's value is its closing (last month's), never a sum.
+      { id: 'os', label: 'Outstanding', agg: 'closing', format: 'currency' },
+      { id: 'inventory', label: 'Inventory', agg: 'closing', format: 'currency' },
       { id: 'ach_pct', label: 'Ach%', agg: 'derived', format: 'percent' },
       { id: 'gr_pct', label: 'Gr%', agg: 'derived', format: 'percent' },
       { id: 'pcpm', label: 'PCPM', agg: 'derived', format: 'currency' },

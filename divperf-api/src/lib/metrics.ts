@@ -14,8 +14,7 @@
  *   achPct        target source is BUDGET1 (see ARCHITECTURE.md §4.3). The
  *                 user has not yet supplied the Ach% definition; this uses the
  *                 §5 default of actual / budget * 100.
- *   pcpm          "total sales / total people". Headcount has no source in the
- *                 primary view, so tmCount is stubbed by the mock layer.
+ *   pcpm          collection ÷ TMs in place (Infinity.vw_emp_count) ÷ months.
  *   rcpa*         RCPA is doctor-related; definition not yet supplied.
  *   secondary     chemist-level (secondary) sales; no source yet.
  *   cn split      Exp CN / SRCN / PD CN arrive as an Excel feed; no source yet.
@@ -73,7 +72,7 @@ export function grPct(current: number | null, prior: number | null): number | nu
  * figure stays comparable across a multi-month range; `months` defaults to 1
  * to make that divisor explicit at the call site rather than implied.
  *
- * DUMMY: `people` has no source in the primary view.
+ * `people` is the TMs in place, from Infinity.vw_emp_count.
  */
 export function pcpm(
   sales: number | null,
@@ -98,6 +97,34 @@ export const cnPct = (crNotes: number | null, grossSales: number | null): number
 /** RCPA as % of secondary — the last column of the geo grids. */
 export const rcpaPctToSec = (rcpa: number | null, sec: number | null): number | null =>
   pct(rcpa, sec);
+
+/**
+ * Rxber for a period: prescribers per month, averaged over the months that
+ * have Rx data. Prescribers are a monthly count of doctors, so summing months
+ * would count the same doctor once per month.
+ */
+export function prescribersPerMonth(prescriberMonths: number | null, monthsWithRx: number): number | null {
+  return monthsWithRx > 0 ? ratio(prescriberMonths, monthsWithRx) : null;
+}
+
+/**
+ * P/D: prescriptions ÷ prescribers. For a month, that month's Rxns ÷ Rxber; for
+ * a period, the period's Rxns ÷ its Rxber (prescribers per month).
+ */
+export const perPrescriber = (rxns: number | null, prescribers: number | null): number | null =>
+  ratio(rxns, prescribers);
+
+/**
+ * A count per month over a period: doctors on the list, doctors met. Lists are
+ * monthly, so summing months would count the same doctor once per month.
+ */
+export function perMonth(total: number | null, months: number): number | null {
+  return months > 0 ? ratio(total, months) : null;
+}
+
+/** Call Avg: doctor calls per field day. */
+export const callAverage = (calls: number | null, fieldDays: number | null): number | null =>
+  ratio(calls, fieldDays);
 
 /**
  * Achievement band for the gap ribbon and value colouring. (§9.1)

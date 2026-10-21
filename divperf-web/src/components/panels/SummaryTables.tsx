@@ -3,9 +3,10 @@
  * RCPA, and MANPOWER ATTRITION.
  */
 import type {
-  InventoryPanel, PcpmPanel, PrimaryPanel, RcpaPanel, SecondaryPanel,
+  InventoryPanel, ManpowerPanel, PcpmPanel, PrimaryPanel, RcpaPanel, RxPanel, SecondaryPanel,
 } from '../../types/api';
-import { EM_DASH, count, lakhs, lakhsAuto, moneyFull, percent } from '../../lib/format';
+import { label as monthLabel } from '../../lib/yrmn';
+import { count, lakhs, lakhsAuto, moneyFull, percent } from '../../lib/format';
 import { Panel } from '../ui/Panel';
 import { TableSkeleton } from '../ui/States';
 
@@ -76,7 +77,7 @@ export function SecondaryPcpmRcpa({
   const rows = ready
     ? [
         { label: 'Sec (₹ L)', value: lakhsAuto(secondary.value), title: full(secondary.value), pct: secondary.grPct },
-        { label: 'Invntry (₹ L)', value: lakhsAuto(inventory?.value), title: full(inventory?.value), pct: null },
+        { label: 'Closing Invntry (₹ L)', value: lakhsAuto(inventory?.value), title: full(inventory?.value), pct: null },
         { label: 'Budget TM (Nos.)', value: count(pcpm.budgetTm), pct: null },
         { label: 'PCPM Coll (₹ L)', value: lakhs(pcpm.pcpmCollection, 1), pct: null },
         // Against plan when a plan exists; otherwise against last year.
@@ -115,33 +116,195 @@ export function SecondaryPcpmRcpa({
   );
 }
 
-/** No attrition feed exists yet: the panel keeps its place and says so. */
-export function ManpowerAttrition({ stale }: { stale: boolean }) {
+const CADRES = [
+  { key: 'tm', label: 'TMs' },
+  { key: 'rm', label: 'RMs' },
+  { key: 'zsm', label: 'ZSMs' },
+] as const;
+
+const TENURES = [
+  { key: 'under6m', label: '< 6 Months' },
+  { key: 'm6to12', label: '6 months to 1 Year' },
+  { key: 'over1y', label: '> 1 Year' },
+] as const;
+
+/**
+ * The report's attrition block: leavers ("Attrition") and joiners ("New
+ * Joiners") by cadre, and leavers by tenure at exit ("left with ageing"), from
+ * the SAP HR exit and hiring views. Division-level only; in a narrower view the
+ * panel keeps its place and says why.
+ */
+export function ManpowerAttrition({
+  data,
+  loading,
+  stale,
+  reason,
+}: {
+  /** Null (or absent) when this view cannot show it. */
+  data?: ManpowerPanel | null;
+  loading: boolean;
+  stale: boolean;
+  /** Why the panel is empty, from meta.unavailable. */
+  reason?: string;
+}) {
   return (
     <Panel title="Manpower Attrition" tone="teal" stale={stale}>
-      <table className="xl-table tnum">
-        <caption className="sr-only">Manpower attrition</caption>
-        <thead>
-          <tr>
-            <th scope="col" className="text-left">Cadre</th>
-            <th scope="col" className="text-right">Count</th>
-            <th scope="col" className="text-right">Attrition %</th>
-          </tr>
-        </thead>
-        <tbody>
-          {['TMs', 'RMs', 'ZSMs'].map((c) => (
-            <tr key={c}>
-              <th scope="row" className="text-left">{c}</th>
-              <td className="text-right text-[var(--xl-muted)]">{EM_DASH}</td>
-              <td className="text-right text-[var(--xl-muted)]">{EM_DASH}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="px-3 py-2 text-[11px] text-[var(--xl-muted)]">
-        No attrition source yet — headcount and leavers will show here once a field-force feed is
-        connected.
-      </p>
+      {loading ? (
+        <div className="p-3">
+          <TableSkeleton rows={6} />
+        </div>
+      ) : !data ? (
+        <p className="px-4 py-8 text-center text-[12px] leading-relaxed text-[var(--xl-muted)]">
+          {reason ?? 'Attrition is not available for this view.'}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:divide-x sm:divide-[var(--xl-grid)]">
+            <table className="xl-table tnum">
+              <caption className="sr-only">Attrition: field force who left in the period</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="text-left">Attrition</th>
+                  <th scope="col" className="text-right">Left</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CADRES.map((c) => (
+                  <tr key={c.key}>
+                    <th scope="row" className="text-left">{c.label} Left</th>
+                    <td className="text-right">{count(data.left[c.key])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <table className="xl-table tnum">
+              <caption className="sr-only">New joiners in the period</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="text-left">New Joiners</th>
+                  <th scope="col" className="text-right">Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CADRES.map((c) => (
+                  <tr key={c.key}>
+                    <th scope="row" className="text-left">{c.label}</th>
+                    <td className="text-right">{count(data.joined[c.key])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* One "left with ageing" table per cadre, as the report lays them out. */}
+          <div className="mt-3 grid grid-cols-1 gap-3 px-0 sm:grid-cols-3">
+            {CADRES.map((c) => (
+              <table key={c.key} className="xl-table tnum">
+                <caption className="sr-only">{`${c.label} who left, by tenure at exit`}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" colSpan={2} className="text-left">
+                      No. of {c.label} left with ageing
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TENURES.map((t) => (
+                    <tr key={t.key}>
+                      <th scope="row" className="text-left !font-semibold">{t.label}</th>
+                      <td className="text-right">{count(data.leftByTenure[c.key][t.key])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ))}
+          </div>
+          <p className="px-3 py-2 text-[11px] leading-relaxed text-[var(--xl-muted)]">
+            Leavers count in the month of their last working day (DOL); ageing is DOL − DOJ. Whole
+            division: the HR views carry no zone, region or HQ.
+          </p>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * The report's "Rx, Rxber, P/D" table: prescriptions, prescribers and
+ * prescriptions per prescriber per month, each with growth on the same months
+ * a year earlier.
+ */
+export function RxRxberPd({
+  data,
+  loading,
+  stale,
+  periodFrom,
+  periodTo,
+  reason,
+}: {
+  data?: RxPanel;
+  loading: boolean;
+  stale: boolean;
+  /** The selected period, to say when Rx covers only part of it. */
+  periodFrom?: number;
+  periodTo?: number;
+  /** Why there are no figures, from meta.unavailable. */
+  reason?: string;
+}) {
+  const rows = data
+    ? [
+        { label: 'Rxns', value: count(data.rxns.value), gr: data.rxns.gr, title: 'Prescriptions in the period' },
+        { label: 'Rxber', value: count(data.rxber.value), gr: data.rxber.gr, title: 'Prescribers per month' },
+        {
+          label: 'P/D/M',
+          value: data.pdm.value === null ? '—' : data.pdm.value.toFixed(1),
+          gr: data.pdm.gr,
+          title: 'P/D/M = Rxns ÷ Rxber',
+        },
+      ]
+    : [];
+  const months =
+    data?.from != null && data.to != null
+      ? data.from === data.to
+        ? monthLabel(data.from)
+        : `${monthLabel(data.from)} – ${monthLabel(data.to)}`
+      : null;
+  const partial = months !== null && (data!.from !== periodFrom || data!.to !== periodTo);
+
+  return (
+    <Panel title="Rx, Rxber, P/D" tone="navy" stale={stale}>
+      {loading || !data ? (
+        <div className="p-3">
+          <TableSkeleton rows={3} />
+        </div>
+      ) : (
+        <>
+          <table className="xl-table tnum">
+            <caption className="sr-only">Prescriptions, prescribers and prescriptions per prescriber</caption>
+            <thead>
+              <tr>
+                <th scope="col" className="text-left" />
+                <th scope="col" className="text-right">No.</th>
+                <th scope="col" className="text-right">Gr%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <th scope="row" className="text-left" title={r.title}>{r.label}</th>
+                  <td className="text-right">{r.value}</td>
+                  <td className="text-right">{pctCell(r.gr)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-3 py-2 text-[11px] leading-relaxed text-[var(--xl-muted)]">
+            {reason ??
+              (partial ? `Rx data covers ${months} only of the selected period. ` : '') +
+                'Rxber is prescribers per month; a doctor writing several SKUs counts once for each. P/D/M = Rxns ÷ Rxber.'}
+          </p>
+        </>
+      )}
     </Panel>
   );
 }

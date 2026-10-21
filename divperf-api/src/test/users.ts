@@ -11,7 +11,7 @@ export const DIVISION = '78';
 
 export async function resetUsers(): Promise<void> {
   assertTestDb(config.USER_DATABASE_URL);
-  await userDb().query('TRUNCATE field_structure_infinity, login_otp, login_history, infinity_sync_log');
+  await userDb().query('TRUNCATE field_structure_infinity, login_otp, login_history, infinity_sync_log, dashboard_accounts');
 }
 
 type Rec = Record<string, string | null>;

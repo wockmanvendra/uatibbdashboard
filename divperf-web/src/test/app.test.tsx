@@ -14,6 +14,9 @@ import { App } from '../App';
 import { useAuthStore } from '../auth/authStore';
 import { useFilterStore } from '../store/filterStore';
 import type {
+  EffortFigures,
+  MissedDoctorRow,
+  MissedDoctorsResponse,
   TabResponse,
   VersionResponse,
   FiltersResponse,
@@ -79,6 +82,8 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
       queryMs: 12,
       priorFrom: null,
       priorTo: null,
+      cnPctFrom: 202604,
+      cnPctTo: 202608,
       unavailable: [],
     },
     primary: {
@@ -117,20 +122,67 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
     },
     mix: {
       dimension: 'brandGroup',
-      labels: ['Methycobal Group', 'Hapid'],
-      disp: [780_000, 190_000],
-      coll: [700_000, 175_000],
-      sec: [600_000, 150_000],
-      rcpa: [640_000, 160_000],
+      disp: { labels: ['Methycobal Group', 'Hapid'], values: [780_000, 190_000] },
+      coll: { labels: ['Methycobal Group', 'Hapid'], values: [700_000, 175_000] },
+      sec: { labels: ['Methycobal Group', 'Hapid'], values: [600_000, 150_000] },
+      rcpa: { labels: ['Methycobal Group', 'Hapid'], values: [640_000, 160_000] },
     },
     ...overrides,
   };
 }
 
 let tabPayload: TabResponse = tab();
+
+/** The missed-doctor list the API answers: 150 doctors, A and B, paged and filtered. */
+const MISSED: MissedDoctorRow[] = Array.from({ length: 150 }, (_, i) => ({
+  month: 202608,
+  zone: 'Chennai',
+  region: 'Cochin',
+  hq: i < 3 ? 'Kannur' : 'Trichur',
+  hqCode: 'WTKANN',
+  tmName: i === 0 ? null : 'Arun E A',
+  tmCode: i === 0 ? null : '829867',
+  doctorCode: `D${i}`,
+  doctorName: i === 1 ? 'Jikku Jacob' : `Doctor ${i}`,
+  speciality: 'Surgeon',
+  category: i % 3 === 0 ? 'A' : 'B',
+  rmVisits: 0,
+  zsmVisits: 0,
+}));
+const missedCalls: URL[] = [];
+function missedFor(url: string): MissedDoctorsResponse {
+  const u = new URL(url, 'http://test');
+  missedCalls.push(u);
+  const search = (u.searchParams.get('search') ?? '').toLowerCase();
+  const cats = u.searchParams.getAll('category');
+  const rows = MISSED.filter(
+    (r) => (!search || r.doctorName!.toLowerCase().includes(search)) && (!cats.length || cats.includes(r.category!)),
+  );
+  const all = u.searchParams.get('all') === 'true';
+  const page = Number(u.searchParams.get('page') ?? 1);
+  const pageSize = all ? 50_000 : Number(u.searchParams.get('pageSize') ?? 100);
+  return { total: rows.length, page, pageSize, rows: rows.slice((page - 1) * pageSize, page * pageSize) };
+}
 let tabStatus = 200;
 /** What the API answers to the correct OTP: a session, or an error. */
 let verifyReply: { status: number; body: unknown } = { status: 200, body: session };
+
+const BU_MOBILE = '9100000001';
+const BU_PASSWORD = 'Temp#Pass1';
+const buSession: LoginResponse = {
+  token: 'bu-token',
+  user: {
+    id: 'acct:6f1c',
+    name: 'Neha Rao',
+    role: 'bu-head',
+    mobile: BU_MOBILE,
+    scopeId: 'division-85',
+    effectiveScope: { level: 'DIVISION', nodes: ['85'] },
+  },
+};
+/** First sign-in: the API demands a new password before a session. */
+let buMustChange = true;
+const BU_RESET_CODE = '615204';
 /** The API returns the code outside production only. */
 let apiReturnsOtp = true;
 const DEV_OTP = '482913';
@@ -140,6 +192,7 @@ beforeEach(() => {
   tabStatus = 200;
   verifyReply = { status: 200, body: session };
   apiReturnsOtp = true;
+  buMustChange = true;
   localStorage.clear();
   useFilterStore.getState().clearAll(); // the store outlives each render
   useAuthStore.setState({ token: session.token, user: session.user });
@@ -163,6 +216,29 @@ beforeEach(() => {
           ? json(verifyReply.body, verifyReply.status)
           : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect OTP. 4 attempt(s) left.' } }, 401);
       }
+      if (url === '/api/auth/password') {
+        if (body.mobile !== BU_MOBILE) {
+          return json({ error: { code: 'NOT_FOUND', message: 'No BU head account is registered for this mobile number.' } }, 404);
+        }
+        if (body.password !== BU_PASSWORD) {
+          return json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect password. 2 attempt(s) left before the account locks.' } }, 401);
+        }
+        return buMustChange ? json({ mustChangePassword: true, changeToken: 'change-1' }) : json(buSession);
+      }
+      if (url === '/api/auth/password/change') {
+        return body.changeToken === 'change-1' || body.changeToken === 'change-reset'
+          ? json(buSession)
+          : json({ error: { code: 'UNAUTHORIZED', message: 'This password-change link has expired. Sign in again.' } }, 401);
+      }
+      if (url === '/api/auth/password/forgot') {
+        return json({ sentTo: 'n***@wockhardt.com', expiresInSeconds: 600, resendInSeconds: 30, devOtp: BU_RESET_CODE });
+      }
+      if (url === '/api/auth/password/forgot/verify') {
+        return body.otp === BU_RESET_CODE
+          ? json({ changeToken: 'change-reset' })
+          : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect code. 4 attempt(s) left.' } }, 401);
+      }
+      if (url.includes('/effort/missed-doctors')) return json(missedFor(url));
       if (url.includes('/meta/version')) return json(version);
       if (url.includes('/meta/filters')) return json(filtersFor(url));
       if (url.includes('/dashboard/')) {
@@ -378,6 +454,24 @@ describe('Division performance tab', () => {
     expect(await screen.findByText('Total CN')).toBeInTheDocument();
     expect(screen.getByText('Exp CN')).toBeInTheDocument();
     expect(screen.getByText('4.3%')).toBeInTheDocument();
+    // CN% covers the whole period here, so the card says so plainly.
+    expect(screen.getByText('% of gross sales for the selected period.')).toBeInTheDocument();
+    expect(screen.queryByText(/CN% covers/)).not.toBeInTheDocument();
+  });
+
+  it('shows O/S and inventory as closing balances, naming the month', async () => {
+    renderApp();
+    const card = await screen.findByRole('table', { name: /credit notes and outstanding/i });
+    expect(within(card).getByText('Closing O/S')).toBeInTheDocument();
+    expect(screen.getByText('Closing O/S is the outstanding balance in Aug-26.')).toBeInTheDocument();
+    expect(screen.getByText('Closing Invntry (₹ L)')).toBeInTheDocument();
+  });
+
+  it('says which months CN% covers when the period starts before the sales data', async () => {
+    tabPayload = tab({ meta: { ...tab().meta, from: 202601, to: 202608, cnPctFrom: 202604, cnPctTo: 202608 } });
+    renderApp();
+    expect(await screen.findByText(/^CN% covers Apr-26 – Aug-26 only/)).toBeInTheDocument();
+    expect(screen.queryByText('% of gross sales for the selected period.')).not.toBeInTheDocument();
   });
 
   it('surfaces the query timing footer', async () => {
@@ -392,10 +486,17 @@ describe('Division performance tab', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Period is 77 months.');
   });
 
+  it('draws trendlines on Tgt vs Disp vs Coll, and no longer shows Target vs Ach% & Gr%', async () => {
+    renderApp();
+    const chart = (await screen.findByText('Tgt vs Disp vs Coll (₹ Lacs)')).closest('section')!;
+    expect(within(chart).getByText('Dashed lines: linear trend.')).toBeInTheDocument();
+    expect(screen.queryByText('Target vs Ach% & Gr%')).not.toBeInTheDocument();
+  });
+
   it('renders all six tabs from the registry', async () => {
     renderApp();
     const nav = await screen.findByRole('navigation', { name: /dashboard tabs/i });
-    for (const label of ['Division', 'Brand', 'Zonal', 'Regional', 'HQ', 'Credit note']) {
+    for (const label of ['Division', 'Zonal', 'Regional', 'HQ', 'Credit note']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });
@@ -409,7 +510,6 @@ describe('panels with no source in the warehouse', () => {
         ...tab().meta,
         unavailable: [
           { key: 'rcpa', label: 'RCPA value', reason: 'No RCPA feed in this view.' },
-          { key: 'creditNote.split', label: 'CN split', reason: 'No credit-note split feed.' },
         ],
       },
       trends: {
@@ -440,18 +540,18 @@ describe('panels with no source in the warehouse', () => {
     renderApp();
 
     expect(await screen.findByText(/2 panels have no source/i)).toBeInTheDocument();
-    expect(screen.getByText(/No TM headcount feed/)).toBeInTheDocument();
+    // In the footer, and under the Effort Dashboard's PCPM box.
+    expect(screen.getAllByText(/No TM headcount feed/)).toHaveLength(2);
   });
 
   it('keeps an empty brand-mix pie in its slot and says why, rather than drawing it empty', async () => {
     tabPayload = tab({
       mix: {
         dimension: 'brandGroup',
-        labels: ['Methycobal Group', 'Hapid'],
-        disp: [780_000, 190_000],
-        coll: [null, null],
-        sec: [null, null],
-        rcpa: [null, null],
+        disp: { labels: ['Methycobal Group', 'Hapid'], values: [780_000, 190_000] },
+        coll: { labels: ['Methycobal Group', 'Hapid'], values: [null, null] },
+        sec: { labels: [], values: [] },
+        rcpa: { labels: [], values: [] },
       },
     });
     renderApp();
@@ -461,6 +561,44 @@ describe('panels with no source in the warehouse', () => {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
     expect(screen.getAllByText('No data for the selected period.')).toHaveLength(3);
+  });
+
+  it('shows every brand in the Secondary mix, under its own brand names', async () => {
+    const brands = ['WOSULIN CART', 'GLARITUS CART', 'WOSULIN 10ML', 'WOSULIN CP VIAL', 'EMROK O', 'GLIMADAY'];
+    tabPayload = tab({
+      mix: {
+        dimension: 'brand',
+        disp: { labels: ['WOSULIN CTG', 'GLARITUS', 'Others'], values: [1_750, 1_283, 900] },
+        coll: { labels: ['WOSULIN CTG', 'GLARITUS', 'Others'], values: [null, null, null] },
+        sec: { labels: brands, values: [1_766, 904, 686, 324, 247, 142] },
+        rcpa: { labels: ['WOSULIN CART', 'GLIMADAY'], values: [1_528, 363] },
+      },
+    });
+    renderApp();
+
+    const frame = (await screen.findByText('Secondary mix by brand')).closest('section')!;
+    fireEvent.click(within(frame).getByRole('button', { name: /table/i }));
+    const table = within(frame).getByRole('table');
+    for (const b of brands) expect(within(table).getByText(b)).toBeInTheDocument();
+    expect(within(table).queryByText('Others')).not.toBeInTheDocument();
+  });
+
+  it('shows collection by brand in Key Brands, with the server Total and its note', async () => {
+    const note = 'Collection by brand is the product-level split of collection, net of GST.';
+    tabPayload = tab({
+      keyBrands: {
+        columns: ['brand', 'tgt', 'disp', 'coll', 'achOnColl', 'grPct', 'sec', 'inventory', 'rcpa'],
+        rows: [['WOSULIN CTG', 150_000_000, 143_500_000, 142_000_000, 94.7, null, null, null, null]],
+        total: ['Total', 450_000_000, 421_000_000, 399_600_000, 88.8, null, null, null, null],
+        note,
+      },
+    });
+    renderApp();
+
+    const table = await screen.findByRole('table', { name: /key brands/i });
+    expect(within(table).getByText('Coll')).toBeInTheDocument();
+    expect(within(table).getByText('Total').closest('tr')!.textContent).toContain('3,996');
+    expect(screen.getByText(note)).toBeInTheDocument();
   });
 
   it('hides table columns that are null in every row', async () => {
@@ -477,6 +615,258 @@ describe('panels with no source in the warehouse', () => {
     // Coll / Sec / RCPA have no values at all, so they are not rendered.
     expect(within(table).queryByText('Coll')).not.toBeInTheDocument();
     expect(within(table).queryByText('RCPA')).not.toBeInTheDocument();
+  });
+});
+
+describe('manpower attrition', () => {
+  const manpower = {
+    left: { tm: 18, rm: 3, zsm: 1 },
+    joined: { tm: 24, rm: 2, zsm: 0 },
+    leftByTenure: {
+      tm: { under6m: 7, m6to12: 5, over1y: 6 },
+      rm: { under6m: 0, m6to12: 1, over1y: 2 },
+      zsm: { under6m: 0, m6to12: 0, over1y: 1 },
+    },
+  };
+
+  it('shows leavers, joiners and leavers by tenure, by cadre', async () => {
+    tabPayload = tab({
+      manpower,
+      trends: { ...tab().trends!, leftTm: [10, 8], leftRm: [1, 2], leftZsm: [0, 1] },
+    });
+    renderApp();
+
+    const left = await screen.findByRole('table', { name: /field force who left in the period/i });
+    expect(within(within(left).getByText('TMs Left').closest('tr')!).getByText('18')).toBeInTheDocument();
+    expect(within(within(left).getByText('ZSMs Left').closest('tr')!).getByText('1')).toBeInTheDocument();
+
+    const joined = screen.getByRole('table', { name: /new joiners/i });
+    expect(within(within(joined).getByText('TMs').closest('tr')!).getByText('24')).toBeInTheDocument();
+
+    // One ageing table per cadre, as in the report.
+    const ageing = (cadre: string) =>
+      within(screen.getByRole('table', { name: `${cadre} who left, by tenure at exit` }));
+    const band = (cadre: string, label: string) =>
+      ageing(cadre).getByText(label).closest('tr')!.querySelector('td')!.textContent;
+    expect(ageing('TMs').getByText('No. of TMs left with ageing')).toBeInTheDocument();
+    expect([band('TMs', '< 6 Months'), band('TMs', '6 months to 1 Year'), band('TMs', '> 1 Year')]).toEqual(['7', '5', '6']);
+    expect([band('RMs', '< 6 Months'), band('RMs', '6 months to 1 Year'), band('RMs', '> 1 Year')]).toEqual(['0', '1', '2']);
+    expect(band('ZSMs', '> 1 Year')).toBe('1');
+
+    // One value column in each box, as asked: no Attr. % column.
+    expect(within(left).queryByText('Attr. %')).not.toBeInTheDocument();
+    expect(within(left).getAllByRole('columnheader')).toHaveLength(2);
+    expect(within(joined).getAllByRole('columnheader')).toHaveLength(2);
+    // The attrition chart is drawn, not the "no source" placeholder.
+    expect(screen.getByText('Attrition — TMs / RMs / ZSMs').closest('section')).not.toHaveTextContent('No source');
+  });
+
+  it('says why when the view is narrower than a division, in the panel and the chart', async () => {
+    const reason = 'The HR exit and hiring views carry a cost centre, not a zone, region or HQ, so attrition and new joiners are shown for whole divisions only.';
+    tabPayload = tab({
+      manpower: null,
+      meta: { ...tab().meta, unavailable: [{ key: 'manpower', label: 'Attrition and new joiners', reason }] },
+    });
+    renderApp();
+    expect(await screen.findAllByText(reason)).toHaveLength(2);
+    expect(screen.queryByRole('table', { name: /field force who left/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('Rx, Rxber, P/D', () => {
+  const rx = {
+    rxns: { value: 3000, gr: 50 },
+    rxber: { value: 550, gr: 10 },
+    pdm: { value: 2.727, gr: -12.5 },
+    from: 202601,
+    to: 202601,
+  };
+
+  it('shows No. and Gr% for Rxns, Rxber and P/D/M, and the chart', async () => {
+    tabPayload = tab({
+      meta: { ...tab().meta, from: 202601, to: 202603 },
+      rx,
+      trends: { ...tab().trends!, rxns: [3000, null], rxber: [550, null], rxPd: [5.45, null] },
+    });
+    renderApp();
+
+    const table = await screen.findByRole('table', { name: /prescriptions, prescribers/i });
+    const row = (label: string) =>
+      within(table).getByText(label).closest('tr')!.querySelectorAll('td');
+    expect([...row('Rxns')].map((c) => c.textContent)).toEqual(['3,000', '50.0%']);
+    expect([...row('Rxber')].map((c) => c.textContent)).toEqual(['550', '10.0%']);
+    expect([...row('P/D/M')].map((c) => c.textContent)).toEqual(['2.7', '-12.5%']);
+    // Rx covers Jan only of Jan–Mar: the panel says so.
+    expect(screen.getByText(/Rx data covers Jan-26 only of the selected period/)).toBeInTheDocument();
+    // The table's panel and the chart both carry the report's title.
+    expect(screen.getAllByText('Rx, Rxber, P/D')).toHaveLength(2);
+  });
+
+  it('names the months with Rx data when the period has none', async () => {
+    const reason = 'The source has Rx (prescription) data for Jan-26 only, so there is none for the selected period.';
+    tabPayload = tab({
+      rx: { rxns: { value: null, gr: null }, rxber: { value: null, gr: null }, pdm: { value: null, gr: null }, from: null, to: null },
+      meta: { ...tab().meta, unavailable: [{ key: 'rx', label: 'Rx, Rxber, P/D', reason }] },
+    });
+    renderApp();
+    // Under the table, and in the chart's place.
+    expect(await screen.findAllByText(reason)).toHaveLength(2);
+  });
+});
+
+describe('effort dashboard', () => {
+  const figures = (over: Partial<EffortFigures> = {}): EffortFigures => ({
+    drs: 21_071, aPlus: null, a: 3_523, b: 8_695, c: 8_853,
+    drsMet: 17_531, coveragePct: 83.2, drsMetRtFrq: null, rtFrqCoveragePct: 68.2,
+    callAvg: 9.42, drsMissed: null, missedRtFrq: null, fieldDays: 22.5, ...over,
+  });
+
+  const withMissed = () =>
+    tab({
+      effort: {
+        total: figures({ drsMissed: 150 }),
+        months: [{ yrMn: 202608, label: 'Aug-26', ...figures({ drsMissed: 150 }) }],
+        missedByCategory: { labels: ['A', 'B'], values: [50, 100] },
+      },
+    });
+
+  it('opens the missed doctors from the right when Drs Missed is clicked', async () => {
+    missedCalls.length = 0;
+    tabPayload = withMissed();
+    renderApp();
+
+    const link = await screen.findByRole('button', { name: /list the 150 missed doctors/i });
+    fireEvent.click(link);
+
+    const drawer = await screen.findByRole('dialog', { name: /missed doctors/i });
+    expect(await within(drawer).findByText('Jikku Jacob')).toBeInTheDocument();
+    expect(within(drawer).getByText('1–100 of 150')).toBeInTheDocument();
+    expect(within(drawer).getAllByText('Vacant').length).toBeGreaterThan(0); // the vacant territory's TM
+    expect(missedCalls[0]!.searchParams.get('from')).toBe(String(tab().meta.from));
+
+    // Next page.
+    fireEvent.click(within(drawer).getByRole('button', { name: /next/i }));
+    expect(await within(drawer).findByText('101–150 of 150')).toBeInTheDocument();
+
+    // A category narrows the list, back on page 1.
+    fireEvent.click(within(drawer).getByRole('button', { name: 'A' }));
+    expect(await within(drawer).findByText('1–50 of 50')).toBeInTheDocument();
+    expect(missedCalls.at(-1)!.searchParams.getAll('category')).toEqual(['A']);
+
+    // Esc closes it.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /missed doctors/i })).not.toBeInTheDocument());
+  });
+
+  it('searches the missed doctors', async () => {
+    tabPayload = withMissed();
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: /list the 150 missed doctors/i }));
+    const drawer = await screen.findByRole('dialog', { name: /missed doctors/i });
+    await within(drawer).findByText('Jikku Jacob');
+
+    fireEvent.change(within(drawer).getByRole('searchbox', { name: /search missed doctors/i }), {
+      target: { value: 'jikku' },
+    });
+    expect(await within(drawer).findByText('1–1 of 1')).toBeInTheDocument();
+    expect(within(drawer).queryByText('Doctor 2')).not.toBeInTheDocument();
+  });
+
+  it('keeps Drs Missed plain text when there are none', async () => {
+    tabPayload = tab({
+      effort: { total: figures({ drsMissed: null }), months: [], missedByCategory: null },
+    });
+    renderApp();
+    await screen.findByRole('table', { name: /doctor coverage/i });
+    expect(screen.queryByRole('button', { name: /missed doctors/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the doctor counts, the effort table, the monthly table and PCPM', async () => {
+    tabPayload = tab({
+      effort: {
+        total: figures({ drsMet: 17_603, coveragePct: 83.5, callAvg: 9.39, fieldDays: 22.9 }),
+        months: [
+          { yrMn: 202608, label: 'Aug-26', ...figures() },
+          { yrMn: 202609, label: 'Sep-26', ...figures({ drsMet: 17_675, callAvg: 9.35, fieldDays: 23.3 }) },
+        ],
+      },
+      pcpm: { budgetTm: 176, pcpmCollection: 523_368 },
+    });
+    renderApp();
+
+    expect(await screen.findByText('Effort Dashboard')).toBeInTheDocument();
+    await screen.findByRole('table', { name: /doctors on the list/i });
+    const cells = (tableName: RegExp, label: string) =>
+      [...within(screen.getByRole('table', { name: tableName })).getByText(label).closest('tr')!.querySelectorAll('td')]
+        .map((c) => c.textContent);
+
+    expect(cells(/doctors on the list/i, 'Count of Drs')).toEqual(['21,071', '']);
+    expect(cells(/doctors on the list/i, 'A')).toEqual(['3,523', '16.7%']);
+    expect(cells(/doctors on the list/i, 'A+')).toEqual(['—', '']);
+    expect(cells(/doctor coverage/i, 'Drs Met')).toEqual(['17,603']);
+    expect(cells(/doctor coverage/i, 'Covrg%')).toEqual(['83.5%']);
+    expect(cells(/doctor coverage/i, 'Drs Missed')).toEqual(['—']);
+    expect(cells(/doctor coverage/i, 'Field Days')).toEqual(['22.9']);
+    expect(cells(/call average and field days/i, 'Sep-26')).toEqual(['9.3', '23.3']);
+    expect(cells(/call average and field days/i, 'Period')).toEqual(['9.4', '22.9']);
+    expect(cells(/budgeted tms/i, 'Budget TM')).toEqual(['176 TM']);
+    expect(cells(/budgeted tms/i, 'PCPM (Coll)')).toEqual(['5.2 lacs']);
+    expect(screen.getByText('Drs Met | Covrg%')).toBeInTheDocument();
+    // The effort table's row, and the chart that cannot be drawn.
+    expect(screen.getAllByText('Drs Missed')).toHaveLength(2);
+  });
+
+  it('says why when the period has no effort data', async () => {
+    const reason = 'The effort data covers Aug-26 – Sep-26 only, so there is none for the selected period.';
+    tabPayload = tab({
+      effort: { total: figures({ drs: null, a: null, b: null, c: null, drsMet: null }), months: [] },
+      meta: { ...tab().meta, unavailable: [{ key: 'effort', label: 'Effort', reason }] },
+    });
+    renderApp();
+    // The monthly table and the Drs Met chart say why; the footer lists it.
+    expect((await screen.findAllByText(reason)).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('credit note tab', () => {
+  it('shows the Exp / SR / PD split and the HQ and SKU grids', async () => {
+    tabPayload = tab({
+      meta: { ...tab().meta, tab: 'credit-note' },
+      primary: undefined,
+      keyBrands: undefined,
+      mix: undefined,
+      cnDetail: {
+        columns: ['name', 'code', 'expCn', 'srCn', 'pdCn', 'totalCn', 'cnPct'],
+        byHq: [['JAMMU', 'WTJAMM', 300_000, 120_000, 30_000, 450_000, 2.5]],
+        bySku: [['WOSULIN', '401679', 80_000, 20_000, null, 100_000, 1.2]],
+      },
+    });
+    renderApp('/credit-note');
+
+    const hq = await screen.findByRole('table', { name: 'Credit note by HQ' });
+    expect(within(hq).getByText('JAMMU')).toBeInTheDocument();
+    expect(within(hq).getByText('HQ')).toBeInTheDocument();
+    expect(within(hq).getByText('4.5')).toHaveAttribute('title', '₹4,50,000.00');
+
+    const sku = screen.getByRole('table', { name: 'Credit note by SKU' });
+    expect(within(sku).getByText('WOSULIN')).toBeInTheDocument();
+    expect(within(sku).getByText('401679')).toBeInTheDocument();
+    expect(within(sku).getByText('Product code')).toBeInTheDocument();
+
+    // The CN & O/S card carries the split, not dashes.
+    const card = screen.getByRole('table', { name: /credit notes and outstanding/i });
+    const exp = within(card).getByText('Exp CN').closest('tr')!;
+    expect(within(exp).getByText('0.5')).toBeInTheDocument(); // 51,000
+    expect(within(exp).getByText('2.6%')).toBeInTheDocument();
+  });
+
+  it('says so when a grid has no credit notes for the period', async () => {
+    tabPayload = tab({
+      meta: { ...tab().meta, tab: 'credit-note' },
+      cnDetail: { columns: ['name', 'code', 'expCn', 'srCn', 'pdCn', 'totalCn', 'cnPct'], byHq: [], bySku: [] },
+    });
+    renderApp('/credit-note');
+    expect(await screen.findAllByText('No credit notes for the selected period.')).toHaveLength(2);
   });
 });
 
@@ -566,5 +956,82 @@ describe('filter cascade', () => {
       expect(await dropdown(label)).toHaveAccessibleName(`${label} All`);
     }
     expect(useFilterStore.getState()).toMatchObject({ division: ['85'], brand: [], zone: [], region: [], hq: [] });
+  });
+});
+
+describe('BU head sign-in', () => {
+  const signOut = () => useAuthStore.setState({ token: null, user: null });
+  const typeInto = (label: RegExp | string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+  async function signInWith(password: string) {
+    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: BU_MOBILE } });
+    typeInto(/^password$/i, password);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+  }
+
+  it('is reached from the field-force sign-in page', async () => {
+    signOut();
+    renderApp('/login');
+    fireEvent.click(await screen.findByRole('link', { name: /sign in with your password/i }));
+    expect(await screen.findByRole('heading', { name: 'BU head sign in' })).toBeInTheDocument();
+  });
+
+  it('makes a first-time BU head set a password, then opens their division', async () => {
+    signOut();
+    renderApp('/login/bu-head');
+    await signInWith(BU_PASSWORD);
+
+    expect(await screen.findByRole('heading', { name: 'Set a new password' })).toBeInTheDocument();
+    // Guided by the rule list, and checked before it is sent.
+    typeInto(/^new password$/i, 'short');
+    typeInto(/confirm new password/i, 'short');
+    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at least 8 characters/i);
+
+    typeInto(/^new password$/i, 'Mine@2026x');
+    typeInto(/confirm new password/i, 'Mine@2026y');
+    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i);
+
+    typeInto(/confirm new password/i, 'Mine@2026x');
+    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
+    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
+    expect(useAuthStore.getState().token).toBe('bu-token');
+  });
+
+  it('opens the dashboard straight away once the password is set', async () => {
+    buMustChange = false;
+    signOut();
+    renderApp('/login/bu-head');
+    await signInWith(BU_PASSWORD);
+    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
+  });
+
+  it('shows the API message for a wrong password', async () => {
+    signOut();
+    renderApp('/login/bu-head');
+    await signInWith('Wrong#pass1');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect password. 2 attempt(s) left before the account locks.');
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('resets a forgotten password with a code', async () => {
+    signOut();
+    renderApp('/login/bu-head');
+    fireEvent.click(await screen.findByRole('button', { name: 'Forgot password?' }));
+    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: BU_MOBILE } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send code' }));
+
+    expect(await screen.findByText(/sent a 6-digit code to n\*\*\*@wockhardt.com/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(`Testing mode — your code is ${BU_RESET_CODE}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Fill' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify code' }));
+
+    expect(await screen.findByRole('heading', { name: 'Set a new password' })).toBeInTheDocument();
+    typeInto(/^new password$/i, 'Fresh#2026');
+    typeInto(/confirm new password/i, 'Fresh#2026');
+    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
+    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
   });
 });

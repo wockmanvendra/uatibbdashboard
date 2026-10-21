@@ -61,7 +61,9 @@ export async function getTabData(
   };
 
   // scopeHash is positional and required — a key cannot be built without it. (I6)
-  const key = tabKey(scope.hash, tab.id, filters);
+  // The data version keys it too, so a source reload invalidates every entry.
+  const version = await getDataVersion();
+  const key = tabKey(scope.hash, tab.id, filters, version.dataVersion);
 
   const cached = await cache.get<TabResponse>(key);
   if (cached) {
@@ -80,12 +82,11 @@ export async function getTabData(
     log.warn({ tab: tab.id, queryMs, filters }, 'slow tab query');
   }
 
-  const openYrMn = config.USE_MOCK_DATA ? OPEN_YR_MN : (await getDataVersion()).openYrMn;
-  await cache.set(key, data, ttlFor(scoped.to, openYrMn));
+  await cache.set(key, data, ttlFor(scoped.to, version.openYrMn));
   return data;
 }
 
-function applyScope(req: TabRequest, scope: Scope): TabRequest {
+export function applyScope<R extends Omit<TabRequest, 'tab'>>(req: R, scope: Scope): R {
   let out = req;
   // The scope's own level, and the user's divisions beside it.
   for (const key of ['division', 'zone', 'region', 'hq'] as const) {
@@ -111,6 +112,5 @@ async function loadTab(tab: TabConfig, scope: Scope, f: TabRequest): Promise<Tab
     return buildMockTab(tab.id, filters as MockFilters);
   }
 
-  const { dataVersion, openYrMn } = await getDataVersion();
-  return buildLiveTab(tab, getDb(), scope, filters, openYrMn, dataVersion);
+  return buildLiveTab(tab, getDb(), scope, filters, await getDataVersion());
 }

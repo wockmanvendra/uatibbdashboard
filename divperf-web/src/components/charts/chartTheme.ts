@@ -29,12 +29,35 @@ export const SURFACE = '#FFFFFF';
 /** Slice order for the mix pies. Fixed, never cycled. */
 export const MIX_COLORS = [XL.blue, XL.red, XL.green, XL.purple, XL.aqua, XL.orange];
 
+/** The Office palette, then further distinct colours for pies with many brands. */
+const BRAND_PALETTE = [
+  ...MIX_COLORS,
+  '#2C4D75', '#772C2A', '#5F7530', '#4D3B62', '#276A7C', '#B65708',
+  '#729ACA', '#CD7371', '#AFC97A', '#9983B5', '#6FBDD1', '#F9AB6B',
+  '#3A5F8F', '#8C3836', '#71893F', '#5E4878',
+];
+
+/**
+ * A distinct colour for every brand in `names`, the same for a brand wherever
+ * it appears. Names are coloured in sorted order, so a brand keeps its colour
+ * between the pies; beyond the palette, golden-angle hues stay apart.
+ */
+export function brandColors(names: string[]): Map<string, string> {
+  const unique = [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  return new Map(
+    unique.map((name, i) => [
+      name,
+      BRAND_PALETTE[i] ?? `hsl(${Math.round((i * 137.508) % 360)}, 55%, 50%)`,
+    ]),
+  );
+}
+
 export const FONT = '"Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif';
 
 export const baseTextStyle = { fontFamily: FONT, color: INK_2, fontSize: 11 };
 
 /** Charts get a fixed height so a month change never shifts layout. */
-export const CHART_HEIGHT = { trend: 250, mix: 230, wide: 300 } as const;
+export const CHART_HEIGHT = { trend: 250, mix: 280, wide: 300 } as const;
 
 export function categoryAxis(labels: string[]) {
   return {

@@ -233,3 +233,31 @@ CREATE TABLE IF NOT EXISTS login_history (
 
 CREATE INDEX IF NOT EXISTS login_history_logged_in_at_idx ON login_history (logged_in_at DESC);
 CREATE INDEX IF NOT EXISTS login_history_mobileno_idx ON login_history (mobileno);
+
+-- ── Password accounts ───────────────────────────────────────────────────────
+-- People who sign in with a mobile number and password rather than an OTP —
+-- BU heads, who are not in Infinity's field structure. As the D2D portal's
+-- users table holds them: bcrypt hash, locked after 3 wrong passwords, a new
+-- password forced at first sign-in and every 90 days. Each sees the divisions
+-- listed here, as an NSM sees theirs. Managed with `npm run account`.
+CREATE TABLE IF NOT EXISTS dashboard_accounts (
+    id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    usertype              VARCHAR(30)  NOT NULL CHECK (usertype IN ('bu-head')),
+    name                  VARCHAR(150) NOT NULL,
+    mobileno              VARCHAR(10)  NOT NULL UNIQUE CHECK (mobileno ~ '^[6-9][0-9]{9}$'),
+    email                 VARCHAR(255),
+    empcode               VARCHAR(50),
+    division_codes        TEXT[]       NOT NULL CHECK (cardinality(division_codes) > 0),
+    password_hash         VARCHAR(255) NOT NULL,
+    password_changed_at   TIMESTAMPTZ,                  -- NULL: must set a new password at next sign-in
+    password_version      INTEGER      NOT NULL DEFAULT 0, -- bumped on every change; a change token is good for one version
+    failed_attempts       SMALLINT     NOT NULL DEFAULT 0,
+    locked_at             TIMESTAMPTZ,                  -- set at the 3rd wrong password
+    reset_otp_hash        CHAR(64),                     -- forgot-password code, as an HMAC
+    reset_otp_expires_at  TIMESTAMPTZ,
+    reset_otp_sent_at     TIMESTAMPTZ,
+    reset_otp_attempts    SMALLINT     NOT NULL DEFAULT 0,
+    is_active             BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);

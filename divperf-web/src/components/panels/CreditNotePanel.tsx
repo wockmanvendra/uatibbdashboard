@@ -1,6 +1,7 @@
 /**
- * The Excel "CN and O/S" card: Total CN / Exp CN / SRCN / PD CN / Total O/S,
- * each with a Value and a % column.
+ * The Excel "CN and O/S" card: Total CN / Exp CN / SRCN / PD CN / Closing O/S,
+ * each with a Value and a % column. Credit notes cover the whole period; O/S is
+ * a balance, so it is the one in the period's last month, never a sum.
  */
 import type { CreditNotePanel as CnData } from '../../types/api';
 import { Panel } from '../ui/Panel';
@@ -12,17 +13,23 @@ const ROWS = [
   { label: 'Exp CN', value: 'expCn', pct: 'expCnPct', emphasis: false },
   { label: 'SRCN', value: 'srCn', pct: 'srCnPct', emphasis: false },
   { label: 'PD CN', value: 'pdCn', pct: 'pdCnPct', emphasis: false },
-  { label: 'Total O/S', value: 'totalOs', pct: 'osPct', emphasis: true },
+  { label: 'Closing O/S', value: 'totalOs', pct: 'osPct', emphasis: true },
 ] as const;
 
 export function CreditNoteCard({
   cn,
   loading,
   stale,
+  pctNote,
+  closingMonth,
 }: {
   cn?: CnData;
   loading: boolean;
   stale: boolean;
+  /** Which months the % column covers, when narrower than the period. */
+  pctNote?: string;
+  /** The month the closing O/S is from, e.g. "Aug-26". */
+  closingMonth?: string;
 }) {
   return (
     <Panel title="Credit Notes & Outstanding" tone="teal" stale={stale}>
@@ -59,7 +66,10 @@ export function CreditNoteCard({
           </tbody>
         </table>
       )}
-      <p className="px-3 py-2 text-[11px] text-[var(--xl-muted)]">% of gross sales for the selected period.</p>
+      <div className="space-y-0.5 px-3 py-2 text-[11px] text-[var(--xl-muted)]">
+        <p>{pctNote ?? '% of gross sales for the selected period.'}</p>
+        {closingMonth && <p>Closing O/S is the outstanding balance in {closingMonth}.</p>}
+      </div>
     </Panel>
   );
 }

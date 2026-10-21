@@ -5,13 +5,16 @@
  * available without a second round trip.
  */
 import type { Db } from '../db.js';
-import { DIMENSION, MEASURE_SELECT, SOURCE, code, num, type MeasureRow } from '../sqlFragments.js';
+import {
+  BALANCE_SELECT, DIMENSION, MEASURES, MEASURE_SELECT, SOURCE, closingMonth, code, num,
+  type BalanceRow, type MeasureRow,
+} from '../sqlFragments.js';
 import { buildPredicate, grainSelect, type PanelFilters } from '../queryBuilder.js';
 import { twoWindowPredicate, groupByNode, type WindowedRow } from './shared.js';
 import type { Scope } from '../../plugins/scope.js';
 import type { DimensionName } from '../sqlFragments.js';
 
-type Row = MeasureRow & WindowedRow & { node_code: string; node_name: string };
+type Row = MeasureRow & BalanceRow & WindowedRow & { node_code: string; node_name: string };
 
 export interface NodeBreakdown {
   code: string;
@@ -20,8 +23,9 @@ export interface NodeBreakdown {
   disp: number | null;
   gross: number | null;
   coll: number | null;
-  cn: number | null;
-  os: number | null;
+  /** Collection split by brand (COLLECTION_MATERIAL), net of GST. */
+  collMat: number | null;
+  /** Closing stock + GIT: the value in the period's last month. */
   inventory: number | null;
   sec: number | null;
   rcpa: number | null;
@@ -48,12 +52,13 @@ export async function fetchBreakdown(
     `SELECT
     ${winCase} AS win,
     ${grain.select},
-    ${MEASURE_SELECT}
+    ${MEASURE_SELECT},
+    ${BALANCE_SELECT}
   FROM ${SOURCE}
   WHERE ${where}
   GROUP BY ${winCase}, ${grain.groupBy}
   ORDER BY ${grain.groupBy}`,
-    params,
+    { ...params, ...closingMonth(filters.to) },
   );
 
   const grouped = groupByNode(rows);
@@ -71,8 +76,7 @@ export async function fetchBreakdown(
       disp: num(c.disp),
       gross: num(c.gross),
       coll: num(c.coll),
-      cn: num(c.cn),
-      os: num(c.os),
+      collMat: num(c.coll_mat),
       inventory: num(c.inventory),
       sec: num(c.sec),
       rcpa: num(c.rcpa),
@@ -90,22 +94,67 @@ export interface MixSlice {
   label: string;
   disp: number | null;
   coll: number | null;
+  /** Collection split by brand (COLLECTION_MATERIAL), net of GST. */
+  collMat: number | null;
   gross: number | null;
   sec: number | null;
   rcpa: number | null;
 }
 
-/** Brands named in the mix; the rest are folded into "Others". */
+export interface BrandTotals {
+  /** Every brand with secondary sales, largest first. */
+  sec: { label: string; value: number }[];
+  /** Every brand with RCPA value, largest first. */
+  rcpa: { label: string; value: number }[];
+}
+
+/**
+ * Secondary and RCPA by brand, every brand — the Secondary and RCPA mix pies.
+ *
+ * These feeds name brands differently from dispatch (WOSULIN CART where
+ * dispatch has WOSULIN CTG), so they cannot share the dispatch pie's top
+ * brands. The predicate carries the brand filter, so a brand selection
+ * narrows the pies to the chosen brands. Rows without a brand hold
+ * collection, not secondary or RCPA, and are left out.
+ */
+export async function fetchBrandTotals(
+  db: Db,
+  scope: Scope,
+  filters: PanelFilters,
+): Promise<BrandTotals> {
+  const { where, params } = buildPredicate(scope, filters);
+  const brand = code(DIMENSION.brand.codeCol);
+
+  const rows = await db.all<{ brand: string; sec: string | number | null; rcpa: string | number | null }>(
+    `SELECT
+    ${brand} AS brand,
+    CAST(${MEASURES.sec} AS DECIMAL(38,2)) AS sec,
+    CAST(${MEASURES.rcpa} AS DECIMAL(38,2)) AS rcpa
+  FROM ${SOURCE}
+  WHERE ${where} AND ${brand} IS NOT NULL
+  GROUP BY ${brand}`,
+    params,
+  );
+
+  const pie = (k: 'sec' | 'rcpa') =>
+    rows
+      .map((r) => ({ label: r.brand, value: num(r[k]) ?? 0 }))
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  return { sec: pie('sec'), rcpa: pie('rcpa') };
+}
+
+/** Brands named in the dispatch mix; the rest are folded into "Others". */
 export const MIX_TOP_BRANDS = 4;
 export const MIX_OTHERS = 'Others';
 
 /**
- * The brand mix: the top brands by dispatch in the selected period, plus
+ * The dispatch mix: the top brands by dispatch in the selected period, plus
  * "Others". Ranking and folding both happen in SQL — nothing is summed here.
  *
  * Dispatch, secondary and RCPA carry a brand, so those slices are real.
- * Collection does not — it is recorded per customer with a blank brand — so it
- * all lands in "Others" and the caller leaves the Coll mix out.
+ * COLLECTION does not — it is recorded per customer with a blank brand — so
+ * the Coll mix uses COLLECTION_MATERIAL, its split by product.
  */
 export async function fetchMix(
   db: Db,
@@ -137,6 +186,7 @@ export async function fetchMix(
       label: r.grp,
       disp: num(r.disp),
       coll: num(r.coll),
+      collMat: num(r.coll_mat),
       gross: num(r.gross),
       sec: num(r.sec),
       rcpa: num(r.rcpa),

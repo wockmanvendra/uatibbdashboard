@@ -26,12 +26,14 @@ const CHART_SERIES = [
   'disp', 'sec', 'rcpa', 'pcpm',
   // "Tgt vs. Disp vs. Coll"
   'tgt', 'coll',
-  // "Target vs Ach% & Gr%"
-  'achPct', 'grPct',
   // "RCPA Plan vs. Actual"
   'rcpaPlan', 'rcpaActual', 'valuePerDr',
   // "Credit Note"
   'cnExp', 'cnSr', 'cnPd', 'cnPct',
+  // "Attrition": leavers per month, by cadre
+  'leftTm', 'leftRm', 'leftZsm',
+  // "Rx, Rxber, P/D"
+  'rxns', 'rxber', 'rxPd',
 ];
 
 export const TABS: TabConfig[] = [
@@ -39,15 +41,7 @@ export const TABS: TabConfig[] = [
     id: 'division-performance',
     label: 'Division performance',
     grain: 'division',
-    panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'trends', 'mix'],
-    trendSeries: CHART_SERIES,
-    mixDimension: 'brand',
-  },
-  {
-    id: 'brand-performance',
-    label: 'Brand performance',
-    grain: 'brand',
-    panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
     mixDimension: 'brand',
   },
@@ -55,7 +49,7 @@ export const TABS: TabConfig[] = [
     id: 'zone-performance',
     label: 'Zonal performance',
     grain: 'zone',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
     mixDimension: 'brand',
   },
@@ -63,7 +57,7 @@ export const TABS: TabConfig[] = [
     id: 'region-performance',
     label: 'Regional performance',
     grain: 'region',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
     mixDimension: 'brand',
   },
@@ -71,7 +65,7 @@ export const TABS: TabConfig[] = [
     id: 'hq-performance',
     label: 'HQ performance',
     grain: 'hq',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
     trendSeries: CHART_SERIES,
     mixDimension: 'brand',
   },

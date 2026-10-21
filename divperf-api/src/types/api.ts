@@ -20,7 +20,6 @@ export type ScopeLevel = 'ALL' | 'DIVISION' | 'ZONE' | 'REGION' | 'HQ';
 
 export type TabId =
   | 'division-performance'
-  | 'brand-performance'
   | 'zone-performance'
   | 'region-performance'
   | 'hq-performance'
@@ -98,6 +97,15 @@ export interface TabMeta {
   priorFrom: YrMn | null;
   priorTo: YrMn | null;
   /**
+   * The months every CN% on the page covers: the part of the period the sales
+   * table has sales for. Credit notes start a year before the sales, so a
+   * period reaching back past them sets only these months' credit notes
+   * against the gross sales. Equal to from/to unless the period reaches past
+   * the sales; null when no month of it has sales (CN% is then blank).
+   */
+  cnPctFrom: YrMn | null;
+  cnPctTo: YrMn | null;
+  /**
    * Panels and columns this tab cannot fill from the current source.
    * Empty once every feed in §4.4 exists.
    */
@@ -124,7 +132,10 @@ export interface PrimaryPanel {
   dispatch: Metric;
 }
 
-/** Excel "PCPM" card. PCPM = Collection / Budgeted TMs / Months. (§5) */
+/**
+ * Excel "PCPM" card. Budget TM is the budgeted TMs (Infinity.budgeted_tm);
+ * PCPM (Coll) = Collection ÷ TMs in place (Infinity.vw_emp_count) ÷ months.
+ */
 export interface PcpmPanel {
   budgetTm: number | null;
   pcpmCollection: number | null;
@@ -180,14 +191,24 @@ export type KeyBrandRow = [
 export interface KeyBrandsPanel {
   columns: readonly KeyBrandColumn[];
   rows: KeyBrandRow[];
+  /** The selection's totals — the grid lists the top brands only. */
+  total?: KeyBrandRow;
+  /** A caveat on the figures, shown under the grid. */
+  note?: string;
 }
 
-/** Excel "CN and O/S" card. */
+/**
+ * Excel "CN and O/S" card. Credit notes come from Infinity.VW_Credit_Note_Details
+ * (Exp + SR + PD = total, exactly) and cover the whole period; their % covers
+ * meta.cnPctFrom..cnPctTo. O/S and the gross-sales denominator come from
+ * Infinity.Infinity_Reports.
+ */
 export interface CreditNotePanel {
   totalCn: number | null;
   expCn: number | null;
   srCn: number | null;
   pdCn: number | null;
+  /** Closing outstanding: the balance in the period's last month, never a sum of months. */
   totalOs: number | null;
   /** CN as % of gross sales. */
   cnPct: number | null;
@@ -279,19 +300,44 @@ export interface TrendsPanel {
   cnSr?: (number | null)[];
   cnPd?: (number | null)[];
   cnPct?: (number | null)[];
+  /** Chart "Rx, Rxber, P/D": prescriptions and prescribers per month, and their ratio. */
+  rxns?: (number | null)[];
+  rxber?: (number | null)[];
+  rxPd?: (number | null)[];
+  /** Chart "Attrition": leavers per month (by DOL), by cadre. */
+  leftTm?: (number | null)[];
+  leftRm?: (number | null)[];
+  leftZsm?: (number | null)[];
 }
 
 /** The four mix donuts, all sharing one label set. */
-export interface MixPanel {
-  dimension: 'brandGroup' | 'brand' | 'zone' | 'region' | 'hq';
+/** One pie: its slices' names and values, largest first. */
+export interface MixSeries {
   labels: string[];
-  disp: (number | null)[];
-  coll: (number | null)[];
-  sec: (number | null)[];
-  rcpa: (number | null)[];
+  values: (number | null)[];
 }
 
-/** Credit Note tab: CN split by stockist and by SKU. */
+/**
+ * The BRAND MIX pies, each with its own slices. Dispatch shows its top brands
+ * plus "Others". Secondary and RCPA name brands differently from dispatch
+ * (WOSULIN CART, not WOSULIN CTG), so they show every brand they have — or
+ * just the brands chosen in the filter.
+ */
+export interface MixPanel {
+  dimension: 'brandGroup' | 'brand' | 'zone' | 'region' | 'hq';
+  disp: MixSeries;
+  coll: MixSeries;
+  sec: MixSeries;
+  rcpa: MixSeries;
+  /** A caveat on the Collection pie. */
+  collNote?: string;
+}
+
+/**
+ * Credit Note tab: the CN split by HQ (territory) and by SKU (product). The
+ * source has no stockist, so the HQ grid stands where the Excel's stockist one
+ * did. A SKU's name is its brand; `code` is the product code.
+ */
 export const CN_DETAIL_COLUMNS = ['name', 'code', 'expCn', 'srCn', 'pdCn', 'totalCn', 'cnPct'] as const;
 export type CnDetailColumn = (typeof CN_DETAIL_COLUMNS)[number];
 export type CnDetailRow = [
@@ -306,8 +352,137 @@ export type CnDetailRow = [
 
 export interface CnDetailPanel {
   columns: readonly CnDetailColumn[];
-  byStockist: CnDetailRow[];
+  byHq: CnDetailRow[];
   bySku: CnDetailRow[];
+}
+
+/** People, by cadre. A count: 0 means none, not "no data". */
+export interface CadreCounts {
+  tm: number;
+  rm: number;
+  zsm: number;
+}
+
+/** Leavers by tenure at exit, DOL − DOJ. */
+export interface TenureCounts {
+  under6m: number;
+  m6to12: number;
+  over1y: number;
+}
+
+/**
+ * Field-force movement in the period, from Infinity.VW_Exit_Details (leavers,
+ * counted in the month of their DOL) and Infinity.VW_Hiring_Details (joiners,
+ * in their joining month), by cadre. Division-level only: the views carry a
+ * cost centre, not a zone, region or HQ.
+ */
+/** A figure for the period and its growth on the same months a year earlier. */
+export interface ValueGr {
+  value: number | null;
+  gr: number | null;
+}
+
+/**
+ * Excel "Rx, Rxber, P/D", from Infinity.Infinity_Reports: prescriptions
+ * (RXN_TOT) and prescribers (DR_TOT). Prescribers are counted per SKU, so a
+ * doctor writing several SKUs counts once for each.
+ */
+export interface RxPanel {
+  /** Prescriptions in the period. */
+  rxns: ValueGr;
+  /** Prescribers per month, averaged over the months with Rx data. */
+  rxber: ValueGr;
+  /** P/D/M = Rxns ÷ Rxber, the two figures above. */
+  pdm: ValueGr;
+  /** The months of the period that have Rx data; null when none do. */
+  from: YrMn | null;
+  to: YrMn | null;
+}
+
+export interface ManpowerPanel {
+  left: CadreCounts;
+  joined: CadreCounts;
+  leftByTenure: { tm: TenureCounts; rm: TenureCounts; zsm: TenureCounts };
+}
+
+/**
+ * One period's (or one month's) field effort, from the Infinity effort data's
+ * territory rows. Over several months, doctor counts and field days are per
+ * month, averaged over the months with effort data; the percentages and Call
+ * Avg come from the summed counts.
+ */
+export interface EffortFigures {
+  /** Doctors on the list: all, and by category. A+ has no source. */
+  drs: number | null;
+  aPlus: number | null;
+  a: number | null;
+  b: number | null;
+  c: number | null;
+  /** Doctors met, and as a % of the list. */
+  drsMet: number | null;
+  coveragePct: number | null;
+  /** No source: the data has a right-frequency %, not a count. */
+  drsMetRtFrq: number | null;
+  /** Doctors met at their right frequency, as a % of the list. */
+  rtFrqCoveragePct: number | null;
+  /** Doctor calls per field day. */
+  callAvg: number | null;
+  /** No source yet. */
+  drsMissed: number | null;
+  missedRtFrq: number | null;
+  /** Field days per working territory. */
+  fieldDays: number | null;
+}
+
+export interface EffortMonth extends EffortFigures {
+  yrMn: YrMn;
+  label: string;
+}
+
+/** The "Effort Dashboard" block. */
+export interface EffortPanel {
+  total: EffortFigures;
+  /** Each month of the period that has effort data, oldest first. */
+  months: EffortMonth[];
+  /**
+   * Missed doctors (visit summary, tmVisitCounts = 0) by category — A, B, C
+   * first, then the rest. Null when the period has no visit data.
+   */
+  missedByCategory?: { labels: string[]; values: number[] } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Missed doctors — GET /api/effort/missed-doctors
+// ---------------------------------------------------------------------------
+
+/**
+ * A doctor the TM did not visit in a month (tmVisitCounts = 0). A doctor missed
+ * in two months, or listed under two territories, has a row for each.
+ */
+export interface MissedDoctorRow {
+  month: YrMn;
+  zone: string | null;
+  region: string | null;
+  hq: string | null;
+  hqCode: string | null;
+  /** The TM on the territory; null when it is vacant. */
+  tmName: string | null;
+  tmCode: string | null;
+  doctorCode: string | null;
+  doctorName: string | null;
+  speciality: string | null;
+  category: string | null;
+  /** The RM's and ZSM's visits to the doctor that month. */
+  rmVisits: number | null;
+  zsmVisits: number | null;
+}
+
+export interface MissedDoctorsResponse {
+  /** Rows matching the filters, search and category — every page together. */
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: MissedDoctorRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +501,10 @@ export type PanelId =
   | 'geoTable'
   | 'trends'
   | 'mix'
-  | 'cnDetail';
+  | 'cnDetail'
+  | 'manpower'
+  | 'rx'
+  | 'effort';
 
 /**
  * One request per tab, every panel in one object. (I2)
@@ -345,6 +523,11 @@ export interface TabResponse {
   trends?: TrendsPanel;
   mix?: MixPanel;
   cnDetail?: CnDetailPanel;
+  /** Null when the tab has the panel but this view cannot fill it — see meta.unavailable. */
+  manpower?: ManpowerPanel | null;
+  rx?: RxPanel;
+  /** Null when the tab has the panel but this view cannot fill it — see meta.unavailable. */
+  effort?: EffortPanel | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +535,8 @@ export interface TabResponse {
 // ---------------------------------------------------------------------------
 
 /** A display label only: what a user sees is their scope. (§6.1) */
-export type UserRole = 'tm' | 'rm' | 'zsm' | 'nsm';
+/** Field force, signing in by OTP; and bu-head, signing in by password. */
+export type UserRole = 'tm' | 'rm' | 'zsm' | 'nsm' | 'bu-head';
 
 export interface OtpRequestBody {
   mobile: string;
@@ -384,6 +568,50 @@ export interface LoginResponse {
   user: SessionUser;
 }
 
+/**
+ * Password sign-in for BU heads (as the D2D portal's staff login). Passwords:
+ * at least 8 characters, with an upper- and lower-case letter, a digit and a
+ * symbol; three wrong ones lock the account until an administrator unlocks it.
+ */
+export interface PasswordLoginBody {
+  mobile: string;
+  password: string;
+}
+
+/**
+ * A session — or, at first sign-in and when the password is 90 days old, a
+ * short-lived token that can only set a new password.
+ */
+export type PasswordLoginResponse = LoginResponse | { mustChangePassword: true; changeToken: string };
+
+export interface ChangePasswordBody {
+  changeToken: string;
+  newPassword: string;
+}
+
+/** Forgot password: a code by email (and SMS, where configured). */
+export interface ForgotPasswordBody {
+  mobile: string;
+}
+
+export interface ForgotPasswordResponse {
+  /** Where the code went, masked — e.g. "r***@wockhardt.com". */
+  sentTo: string;
+  expiresInSeconds: number;
+  resendInSeconds: number;
+  /** Outside production only; the screen shows it, for testing. */
+  devOtp?: string;
+}
+
+export interface ForgotPasswordVerifyBody {
+  mobile: string;
+  otp: string;
+}
+
+export interface ForgotPasswordVerifyResponse {
+  changeToken: string;
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -392,6 +620,7 @@ export type ErrorCode =
   | 'BAD_REQUEST'
   | 'UNAUTHORIZED'
   | 'SCOPE_EMPTY'
+  | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'TOO_MANY_REQUESTS'
   | 'UPSTREAM_TIMEOUT'

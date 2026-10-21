@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { effortRoutes } from './routes/effort.js';
 import { AppError, serialiseError, tooManyRequests } from './lib/errors.js';
 
 export async function buildServer() {
@@ -24,6 +25,11 @@ export async function buildServer() {
 
   const app = Fastify({
     logger: loggerOptions,
+    // The web app's /api proxy runs on this machine and passes the browser's
+    // address in X-Forwarded-For. Trusting it from loopback only means each
+    // user gets their own sign-in rate limit and audit IP, while a request
+    // from anywhere else cannot claim another address.
+    trustProxy: '127.0.0.1',
     routerOptions: {
       // Repeated query params (?zone=A&zone=B) must arrive as arrays.
       querystringParser: (str: string) => {
@@ -93,14 +99,15 @@ export async function buildServer() {
   await app.register(authRoutes);
   await app.register(metaRoutes);
   await app.register(dashboardRoutes);
+  await app.register(effortRoutes);
 
   return app;
 }
 
-async function main() {
+export async function main() {
   const app = await buildServer();
   try {
-    await app.listen({ port: config.PORT, host: '0.0.0.0' });
+    await app.listen({ port: config.PORT, host: config.HOST });
     if (config.USE_MOCK_DATA) {
       app.log.warn(
         'USE_MOCK_DATA=true — serving generated data. The serving database ' +
@@ -121,6 +128,8 @@ async function main() {
 }
 
 // Only start a server when run directly, so tests can import buildServer().
+// A process manager that loads this file through its own wrapper (PM2) has a
+// different argv[1], so it starts the server through start.ts instead.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop()!)) {
   void main();
 }

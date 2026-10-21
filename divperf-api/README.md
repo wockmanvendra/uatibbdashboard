@@ -18,21 +18,63 @@ contract; `false` reads the warehouse (see `.env`).
 
 ## Data source
 
-Every dashboard figure comes from one Synapse table, `Infinity.Infinity_Reports`
-(`DASHBOARD_TABLE`), mapped in `src/data/sqlFragments.ts`:
+Two Synapse sources, mapped in `src/data/sqlFragments.ts`. Everything but credit
+notes comes from `Infinity.Infinity_Reports` (`DASHBOARD_TABLE`):
 
 | Figure | Column |
 | --- | --- |
 | Target / Dispatch / Collection | `BUDGET1` / `NET_SALES` / `-COLLECTION` |
-| Credit notes / Outstanding | `CR_NOTES` / `OS` |
-| Inventory | `STOCK + GIT` |
+| Gross sales (CN% denominator) | `GROSS_SALES` |
+| Outstanding / Inventory | `OS` / `STOCK + GIT` — balances: a period's value is its **last month's**, never a sum of months |
 | Secondary / RCPA | `secondary` / `RCPA_VALUE` |
 | Division / Zone / Region / HQ / Brand / Month | `Division_Code` / `ZONE_CODE` / `REGION_CODE` / `SAP_Code` / `Brand` / `yearMonth` |
 
-The table is zero-filled, so a measure with no non-zero value in the window is
-returned as null (an em dash), not 0. Blank on purpose, until a source is given:
-PCPM (no headcount), RCPA plan, the CN split, collection by brand, and inventory
-below division (stock is per plant). Each is explained in `meta.unavailable`.
+Credit notes come from `Infinity.VW_Credit_Note_Details` (`CN_TABLE`), by
+`Division_Code` / `TERRITORY_CODE` (HQ) / `Product_code` / `yearMonth`:
+
+| Figure | Column |
+| --- | --- |
+| Exp CN / SRCN / PD CN | `Breakage_Expiry` / `SalesReturn_CreditNote` / `PriceDifference_CreditNote` |
+| Total CN | `Total_CreditNote` (always the sum of the three) |
+
+The view has no zone, region or brand. Zone and region come from a territory
+lookup over the sales table (each division + territory sits in exactly one zone
+and region); a brand filter matches the products carrying that brand. The
+Credit note tab's grids are by HQ and by SKU — the view has no stockist — and a
+SKU is named by its brand, because the sales table's `MATERIAL_DESC` does not
+match its product codes. `CR_NOTES` in the sales table is a different figure and
+is not shown.
+
+Credit notes start in Apr-2025, sales in Apr-2026. Every CN% counts only the
+credit notes of the period's months that have sales (`meta.cnPctFrom..cnPctTo`,
+from the first and last month with `GROSS_SALES`), so a period reaching back
+past the sales does not set a year of credit notes against a few months of
+sales. The CN values themselves still cover the whole period, and the card and
+grids say which months the % covers.
+
+Prescriptions come from the sales table too: Rxns = `RXN_TOT`, Rxber = `DR_TOT`
+(Jan-2026 only so far). Rxber is counted per SKU, so a doctor writing several
+SKUs counts once for each; for a period it is the average per month over the
+months with Rx data, and P/D/M = Rxns ÷ Rxber over those months.
+
+Attrition and new joiners come from the SAP HR views `Infinity.VW_Exit_Details`
+and `Infinity.VW_Hiring_Details` (`HR_EXIT_TABLE`, `HR_HIRING_TABLE`), one row
+per person. Cadre is `EMP_TYPE` (TM / RM / ZM = ZSM). A leaver counts in the
+month of their `DOL`; a joiner in the month of `BEGDA` (the joining date).
+Ageing is `DOL − DOJ`: under 6 months, 6 months to 1 year, over 1 year. The
+views have no division, zone, region or HQ code — only a cost centre — so
+`HR_DIVISION_COST_CENTRES` maps cost centres to divisions (85 = 1000EM68 "Emp
+WTF", A5 = 1000EM75 "Emp Cost MIQNAF", confirmed against Infinity's field
+structure), and the figures are whole-division only: a zone, region or HQ view,
+a brand filter, or a division with no mapping shows the reason instead.
+
+The dashboard's SQL login needs SELECT on every source; a grant on the schema
+(`GRANT SELECT ON SCHEMA::[Infinity] TO …`) survives a table being rebuilt.
+
+Both sources are zero-filled, so a measure with no non-zero value in the window
+is returned as null (an em dash), not 0. Blank on purpose, until a source is
+given: PCPM (no headcount), RCPA plan, collection by brand, and inventory below
+division (stock is per plant). Each is explained in `meta.unavailable`.
 
 Port 8787, not 8080 — 8080 is taken by another app on the current dev machine.
 
@@ -41,6 +83,36 @@ npm test          # needs the local PostgreSQL on 127.0.0.1:5432 (see below)
 npm run typecheck
 npm run build
 ```
+
+## BU head sign-in — password accounts
+
+BU heads are not in Infinity's field structure, so they have accounts of their
+own in `dashboard_accounts` and sign in at `/login/bu-head` with a mobile number
+and password — the D2D portal's staff (password) login:
+
+- bcrypt hashes; 3 wrong passwords lock the account until it is unlocked;
+- a new password is required at first sign-in and every 90 days (8+ characters,
+  upper- and lower-case, a digit, a symbol);
+- "Forgot password" sends a code by email (and SMS, where configured), shown on
+  screen outside production, which unlocks the account and sets a new password;
+- the token that sets a password is good for 15 minutes and one use, and is
+  never accepted as a session;
+- a BU head sees the divisions on the account, as an NSM sees theirs.
+
+Accounts are managed from the command line (there is no admin screen):
+
+```bash
+npm run account -- add     --name "Name" --mobile 98XXXXXXXX --division 85[,A5] [--email a@b.com] [--empcode 123]
+npm run account -- reset   --mobile 98XXXXXXXX   # new temporary password, unlocks
+npm run account -- unlock  --mobile 98XXXXXXXX
+npm run account -- disable --mobile 98XXXXXXXX   # enable to restore
+npm run account -- update  --mobile 98XXXXXXXX [--name] [--email] [--division]
+npm run account -- list
+```
+
+`add` and `reset` print a temporary password once; the user must replace it at
+first sign-in. Every attempt is recorded in `login_history` with
+`login_method = 'password'`.
 
 ## Sign-in — Infinity's field structure
 

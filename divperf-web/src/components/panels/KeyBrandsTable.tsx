@@ -1,9 +1,10 @@
 /**
  * The report's KEY BRANDS PERFORMANCE grid.
- * Columns: Brand | Tgt | Disp | Coll | Ach% on Coll | Gr% | Sec | Inventory | RCPA
+ * Columns: Brand | Tgt | Disp | Coll | Ach% on Coll | Gr% | Sec | Closing inventory | RCPA
  *
- * The Total row is passed in from the tab's server-computed totals — the grid
- * shows the top brands only, and the client never sums rows. (I3)
+ * The Total row is the server's, from its totals — the grid shows the top
+ * brands only, and the client never sums rows. (I3) Coll is collection split by
+ * product, net of GST; the panel's note says so.
  */
 import type { KeyBrandRow, KeyBrandsPanel } from '../../types/api';
 import { Panel } from '../ui/Panel';
@@ -19,7 +20,7 @@ const COLUMNS: ColumnSpec[] = [
   { index: 4, label: 'Ach% on Coll', format: 'ach' },
   { index: 5, label: 'Gr%', format: 'growth' },
   { index: 6, label: 'Sec', format: 'money' },
-  { index: 7, label: 'Inventory', format: 'money' },
+  { index: 7, label: 'Closing inventory', format: 'money' },
   { index: 8, label: 'RCPA', format: 'money' },
 ];
 
@@ -77,6 +78,7 @@ export function KeyBrandsTable({
           hideEmptyColumns
         />
       )}
+      {data?.note && <p className="px-3 py-2 text-[11px] text-[var(--xl-muted)]">{data.note}</p>}
     </Panel>
   );
 }

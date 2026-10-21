@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../server.js';
-import type { ApiError, FiltersResponse, TabResponse } from '../types/api.js';
+import type { ApiError, FiltersResponse, MissedDoctorsResponse, TabResponse } from '../types/api.js';
 
 // These tests are about the data, not access: the session is an all-divisions user.
 vi.mock('../users/repo.js', async (importOriginal) => ({
@@ -39,7 +39,7 @@ describe('GET /api/dashboard/:tab', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<TabResponse>();
     expect(Object.keys(body).sort()).toEqual(
-      ['creditNote', 'inventory', 'keyBrands', 'meta', 'mix', 'pcpm', 'primary', 'rcpa', 'secondary', 'trends'].sort(),
+      ['creditNote', 'effort', 'inventory', 'keyBrands', 'manpower', 'meta', 'mix', 'pcpm', 'primary', 'rcpa', 'rx', 'secondary', 'trends'].sort(),
     );
   });
 
@@ -105,7 +105,7 @@ describe('GET /api/dashboard/:tab', () => {
   });
 
   it('reports cached=true on a repeat request', async () => {
-    const url = '/api/dashboard/brand-performance?from=202604&to=202607';
+    const url = '/api/dashboard/hq-performance?from=202604&to=202607';
     expect((await get(url)).json<TabResponse>().meta.cached).toBe(false);
     expect((await get(url)).json<TabResponse>().meta.cached).toBe(true);
   });
@@ -174,5 +174,32 @@ describe('health', () => {
   it('answers liveness without touching the database', async () => {
     expect((await get('/health')).statusCode).toBe(200);
     expect((await get('/ready')).statusCode).toBe(200);
+  });
+});
+
+describe('GET /api/effort/missed-doctors', () => {
+  it('returns a page of missed doctors with the total', async () => {
+    const res = await get('/api/effort/missed-doctors?from=202608&to=202609&page=1&pageSize=10');
+    expect(res.statusCode).toBe(200);
+    const body = res.json<MissedDoctorsResponse>();
+    expect(body.total).toBe(48); // the mock: 24 a month
+    expect(body.rows).toHaveLength(10);
+    expect(body.rows[0]).toHaveProperty('doctorName');
+  });
+
+  it('filters by category and search', async () => {
+    const body = (await get('/api/effort/missed-doctors?from=202608&to=202608&category=A&search=doctor 1')).json<MissedDoctorsResponse>();
+    expect(body.rows.every((r) => r.category === 'A')).toBe(true);
+    expect(body.rows.every((r) => r.doctorName!.toLowerCase().includes('doctor 1'))).toBe(true);
+  });
+
+  it('rejects a bad period and an oversized page', async () => {
+    expect((await get('/api/effort/missed-doctors?from=202609&to=202608')).statusCode).toBe(400);
+    expect((await get('/api/effort/missed-doctors?from=202608&to=202608&pageSize=5000')).statusCode).toBe(400);
+  });
+
+  it('needs a session', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/effort/missed-doctors?from=202608&to=202608' });
+    expect(res.statusCode).toBe(401);
   });
 });

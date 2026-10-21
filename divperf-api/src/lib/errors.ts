@@ -4,6 +4,7 @@ const STATUS: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   SCOPE_EMPTY: 403,
+  FORBIDDEN: 403,
   NOT_FOUND: 404,
   TOO_MANY_REQUESTS: 429,
   UPSTREAM_TIMEOUT: 504,
@@ -31,6 +32,7 @@ export class AppError extends Error {
 
 export const badRequest = (m: string, d?: unknown) => new AppError('BAD_REQUEST', m, d);
 export const notFound = (m: string, d?: unknown) => new AppError('NOT_FOUND', m, d);
+export const forbidden = (m: string, d?: unknown) => new AppError('FORBIDDEN', m, d);
 export const unauthorized = (m: string, d?: unknown) => new AppError('UNAUTHORIZED', m, d);
 export const tooManyRequests = (m: string, d?: unknown) => new AppError('TOO_MANY_REQUESTS', m, d);
 export const upstreamUnavailable = (m: string, d?: unknown) => new AppError('UPSTREAM_TIMEOUT', m, d);

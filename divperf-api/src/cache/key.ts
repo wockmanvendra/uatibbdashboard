@@ -41,9 +41,19 @@ export function canonToString(f: CanonicalFilters): string {
   ].join('|');
 }
 
-export function tabKey(scopeHash: string, tab: string, filters: CanonicalFilters): string {
+/**
+ * `dataVersion` is part of the key: when any source is reloaded, every cached
+ * response becomes unreachable, so a range of "closed" months — cached for a
+ * week — can never be served from before the reload.
+ */
+export function tabKey(
+  scopeHash: string,
+  tab: string,
+  filters: CanonicalFilters,
+  dataVersion: string,
+): string {
   assertScope(scopeHash);
-  return `${CACHE_NS}:${scopeHash}:tab:${tab}:${canonToString(filters)}`;
+  return `${CACHE_NS}:${scopeHash}:tab:${tab}:${dataVersion}:${canonToString(filters)}`;
 }
 
 export function filtersKey(

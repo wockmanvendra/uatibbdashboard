@@ -7,16 +7,28 @@
  * an em dash, which is the honest answer. (§7.5)
  */
 import type {
-  CreditNotePanel, GeoRow, KeyBrandRow, MixPanel, TabResponse, TrendsPanel,
+  CreditNotePanel, EffortPanel, GeoRow, KeyBrandRow, MixPanel, RxPanel, TabResponse, TrendsPanel,
 } from '../types/api.js';
-import { GEO_COLUMNS, KEY_BRAND_COLUMNS } from '../types/api.js';
+import { CN_DETAIL_COLUMNS, GEO_COLUMNS, KEY_BRAND_COLUMNS } from '../types/api.js';
 import type { TabConfig } from '../tabs/registry.js';
 import type { Scope } from '../plugins/scope.js';
 import type { Db } from '../data/db.js';
 import type { PanelFilters } from '../data/queryBuilder.js';
 import { fetchTotals, type Totals } from '../data/panels/totals.js';
-import { fetchTrend, type TrendResult } from '../data/panels/trends.js';
-import { fetchBreakdown, fetchMix, type NodeBreakdown } from '../data/panels/breakdown.js';
+import { fetchTrend, type TrendPoint, type TrendResult } from '../data/panels/trends.js';
+import {
+  fetchBrandTotals, fetchBreakdown, fetchMix, type BrandTotals, type NodeBreakdown,
+} from '../data/panels/breakdown.js';
+import {
+  NO_CN, fetchCnBreakdown, fetchCnByMonth, fetchCnDetail,
+  type CnAmounts, type CnByMonth, type CnDetail, type CnFigures, type CnGrain, type CnNode, type SalesMonths,
+} from '../data/panels/creditNotes.js';
+import type { DataVersion } from './versionService.js';
+import { fetchManpower, manpowerScope, type ManpowerResult, type ManpowerScope } from '../data/panels/manpower.js';
+import { effortScope, fetchEffort, type EffortScope } from '../data/panels/effort.js';
+import { fetchMissedSummary, type MissedSummary } from '../data/panels/missedDoctors.js';
+import { fetchHeadcount, type Headcount, type HeadcountGrain } from '../data/panels/headcount.js';
+import { config } from '../config.js';
 import * as M from '../lib/metrics.js';
 import { label, monthCount, priorYear } from '../lib/yrmn.js';
 import type { DimensionName } from '../data/sqlFragments.js';
@@ -43,28 +55,62 @@ const NO_SOURCE = null;
  */
 const REASONS = {
   pcpm:
-    'There is no field-force headcount source yet, so PCPM (collection per TM per month) is left blank.',
+    'No TMs in place are recorded for this selection in Infinity.vw_emp_count, so PCPM (collection per TM per month) is left blank.',
+  pcpmBrand:
+    'Collection has no brand in the source, so PCPM is left blank for a brand selection. Budget TM covers the whole selected geography.',
+  effortBrand:
+    'Doctor coverage and calls are not tracked by brand, so the effort figures cover the whole selected geography.',
+  effortUnmapped: (divisions: string[]) =>
+    `The effort data names divisions rather than coding them, and no name is mapped to ${divisions.length === 1 ? 'division' : 'divisions'} ${divisions.join(', ')} yet (EFFORT_DIVISIONS), so ${divisions.length === 1 ? 'its' : 'their'} effort is not shown.`,
+  effortNone: (from: number | null, to: number | null) =>
+    from === null || to === null
+      ? 'The effort data has no months yet.'
+      : `The effort data covers ${from === to ? label(from) : `${label(from)} – ${label(to)}`} only, so there is none for the selected period.`,
+  effortNoSource:
+    'The effort data has no count of doctors met or missed at the right frequency, or of A+ doctors, so those are left blank.',
   rcpaPlan:
     'RCPA actual is available, but there is no RCPA plan source, so plan and achievement against plan are left blank.',
   rcpaNone: 'The source has no RCPA values for the selected months.',
   rcpaStale: (asOf: number, to: number) =>
     `RCPA for this selection ends at ${label(asOf)}, earlier than the selected period end (${label(to)}). The figure covers only the months that have RCPA, so it is not comparable with the sales figures beside it.`,
-  cnSplit:
-    'Credit notes arrive as one total. The Exp / SR / PD split has no source yet.',
-  brandColl:
-    'Collection has no brand in the source — it is recorded per customer, not per material.',
+  cnPct:
+    'Credit notes cover this period, but the source has no gross sales for it, so CN% is left blank.',
+  brandCollNote:
+    'Collection by brand is the product-level split of collection (COLLECTION_MATERIAL), net of GST — about 5% below total collection.',
   geoInventory:
     'Stock and GIT are recorded per plant, not per territory, so inventory cannot be split by zone, region or HQ.',
   priorYear:
     'The source has no sales, target or collection for the prior-year period, so growth on those is left blank. Secondary does cover that period, so its growth is real.',
+  manpowerGeo:
+    'The HR exit and hiring views carry a cost centre, not a zone, region or HQ, so attrition and new joiners are shown for whole divisions only.',
+  manpowerBrand: 'People are not tracked by brand, so attrition and new joiners do not apply to a brand selection.',
+  manpowerUnmapped: (divisions: string[]) =>
+    `The HR views identify a division only by cost centre, and no cost centre is mapped to ${divisions.length === 1 ? 'division' : 'divisions'} ${divisions.join(', ')} yet, so its leavers and joiners cannot be picked out.`,
+  rxNone: (from: number | null, to: number | null) =>
+    from === null || to === null
+      ? 'The source has no Rx (prescription) data yet.'
+      : `The source has Rx (prescription) data for ${from === to ? label(from) : `${label(from)} – ${label(to)}`} only, so there is none for the selected period.`,
 } as const;
 
 interface Coverage {
   hasPriorSales: boolean;
+  /** Credit notes exist in the period but gross sales do not, so CN% cannot be had. */
+  cnWithoutGross: boolean;
   rcpaAsOf: number | null;
   to: number;
   /** A zone / region / HQ narrows the data, so plant-level figures cannot apply. */
   geoNarrowed: boolean;
+  manpower: ManpowerScope;
+  /** Months of the period with Rx data, and the source's whole Rx span. */
+  rxMonths: number;
+  rxSource: { from: number | null; to: number | null };
+  brandFiltered: boolean;
+  /** PCPM has collection to divide but no TMs to divide it by. */
+  pcpmNoTms: boolean;
+  effort: EffortScope;
+  /** Months of the period with effort data, and the source's whole effort span. */
+  effortMonths: number;
+  effortSource: { from: number | null; to: number | null };
 }
 
 function unavailableFor(tab: TabConfig, c: Coverage): TabResponse['meta']['unavailable'] {
@@ -73,7 +119,8 @@ function unavailableFor(tab: TabConfig, c: Coverage): TabResponse['meta']['unava
   const has = (p: string) => tab.panels.includes(p as never);
 
   if (has('primary') && !c.hasPriorSales) add('growth', 'Gr% on Tgt, Disp and Coll', REASONS.priorYear);
-  if (has('pcpm')) add('pcpm', 'PCPM', REASONS.pcpm);
+  if (has('pcpm') && c.brandFiltered) add('pcpm', 'PCPM', REASONS.pcpmBrand);
+  else if (has('pcpm') && c.pcpmNoTms) add('pcpm', 'PCPM', REASONS.pcpm);
 
   if (has('rcpa')) {
     add('rcpa', 'RCPA plan and Ach%', REASONS.rcpaPlan);
@@ -82,13 +129,30 @@ function unavailableFor(tab: TabConfig, c: Coverage): TabResponse['meta']['unava
   }
 
   if (has('inventory') && c.geoNarrowed) add('inventory', 'Inventory', REASONS.geoInventory);
-  if (has('creditNote')) add('creditNote.split', 'Exp CN / SRCN / PD CN', REASONS.cnSplit);
-  if (has('keyBrands')) add('keyBrands.coll', 'Coll and Ach% by brand', REASONS.brandColl);
+  if (has('creditNote') && c.cnWithoutGross) add('creditNote.pct', 'CN%', REASONS.cnPct);
   if (has('geoTable') && tab.grain !== 'division' && tab.grain !== 'brand') {
     add('geoTable.inventory', 'Inventory value column', REASONS.geoInventory);
   }
-  if (has('mix')) add('mix.coll', 'Coll mix', REASONS.brandColl);
-  if (has('cnDetail')) add('cnDetail', 'CN by stockist and SKU', REASONS.cnSplit);
+  if (has('rx') && c.rxMonths === 0) add('rx', 'Rx, Rxber, P/D', REASONS.rxNone(c.rxSource.from, c.rxSource.to));
+  if (has('effort')) {
+    if (!c.effort.ok) add('effort', 'Effort', REASONS.effortUnmapped(c.effort.unmapped));
+    else {
+      if (c.effortMonths === 0) add('effort', 'Effort', REASONS.effortNone(c.effortSource.from, c.effortSource.to));
+      if (c.effort.unmapped.length) add('effort.unmapped', 'Effort', REASONS.effortUnmapped(c.effort.unmapped));
+      if (c.brandFiltered) add('effort.brand', 'Effort by brand', REASONS.effortBrand);
+      add('effort.noSource', 'A+, Drs Met with Rt Frq, Missed with Rt Frq', REASONS.effortNoSource);
+    }
+  }
+  if (has('manpower')) {
+    const m = c.manpower;
+    if (!m.ok) {
+      add(
+        'manpower',
+        'Attrition and new joiners',
+        m.why === 'geo' ? REASONS.manpowerGeo : m.why === 'brand' ? REASONS.manpowerBrand : REASONS.manpowerUnmapped(m.divisions),
+      );
+    }
+  }
   return out;
 }
 
@@ -97,16 +161,37 @@ export async function buildLiveTab(
   db: Db,
   scope: Scope,
   filters: PanelFilters,
-  openYrMn: number,
-  dataVersion: string,
+  version: Pick<DataVersion, 'dataVersion' | 'salesFrom' | 'salesTo' | 'rxFrom' | 'rxTo' | 'effortFrom' | 'effortTo'>,
 ): Promise<TabResponse> {
   const months = monthCount(filters.from, filters.to);
+  // The part of the period the sales table has sales for: CN% counts only
+  // these months' credit notes. Null when the period has none.
+  const salesMonths: SalesMonths | null =
+    version.salesFrom === null || version.salesTo === null
+      ? null
+      : {
+          from: Math.max(filters.from, version.salesFrom),
+          to: Math.min(filters.to, version.salesTo),
+        };
+  const pctMonths = salesMonths && salesMonths.from <= salesMonths.to ? salesMonths : null;
   const needsBreakdown = tab.panels.includes('keyBrands') || tab.panels.includes('geoTable');
   const dimension = GRAIN_DIMENSION[tab.grain] ?? 'division';
 
   // Every query in parallel. Sequential awaits here are a bug (§7.6), and
   // against Synapse they are the difference between 2 s and 8 s.
-  const [totals, trend, breakdown, mix] = await Promise.all([
+  const has = (p: string) => tab.panels.includes(p as never);
+  const cnGrain: CnGrain | null =
+    tab.grain === 'zone' || tab.grain === 'region' || tab.grain === 'hq' || tab.grain === 'division'
+      ? tab.grain
+      : null;
+  const noCnMonths: CnByMonth = { total: NO_CN, byMonth: new Map() };
+  const people = manpowerScope(scope, filters, config.HR_DIVISION_COST_CENTRES);
+  const effortView = effortScope(scope, filters, config.EFFORT_DIVISIONS);
+  // Headcount per node only where a grid shows a PCPM column.
+  const headcountGrain: HeadcountGrain | null =
+    has('geoTable') && tab.grain !== 'brand' ? (tab.grain as HeadcountGrain) : null;
+
+  const [totals, trend, breakdown, mix, brandTotals, cnMonths, cnNodes, cnDetail, manpower, headcount, effort, missed] = await Promise.all([
     fetchTotals(db, scope, filters),
     tab.panels.includes('trends')
       ? fetchTrend(db, scope, filters)
@@ -115,22 +200,55 @@ export async function buildLiveTab(
       ? fetchBreakdown(db, scope, filters, tab.panels.includes('keyBrands') ? 'brand' : dimension)
       : Promise.resolve([]),
     tab.panels.includes('mix') ? fetchMix(db, scope, filters) : Promise.resolve([]),
+    tab.panels.includes('mix')
+      ? fetchBrandTotals(db, scope, filters)
+      : Promise.resolve<BrandTotals>({ sec: [], rcpa: [] }),
+    // Credit notes come from their own view.
+    has('creditNote') || has('trends') || has('geoTable')
+      ? fetchCnByMonth(db, scope, filters, pctMonths)
+      : Promise.resolve(noCnMonths),
+    has('geoTable') && cnGrain
+      ? fetchCnBreakdown(db, scope, filters, cnGrain, pctMonths)
+      : Promise.resolve(new Map<string, CnNode>()),
+    has('cnDetail')
+      ? fetchCnDetail(db, scope, filters, pctMonths)
+      : Promise.resolve<CnDetail>({ byHq: [], bySku: [] }),
+    // Leavers and joiners come from the SAP HR views.
+    has('manpower') && people.ok
+      ? fetchManpower(db, filters, people.costCentres)
+      : Promise.resolve<ManpowerResult | null>(null),
+    // Budget TM and PCPM's TMs from the headcount tables.
+    has('pcpm') || has('geoTable')
+      ? fetchHeadcount(db, scope, filters, headcountGrain)
+      : Promise.resolve<Headcount | null>(null),
+    // Doctor coverage and calls from the effort data.
+    has('effort') && effortView.ok
+      ? fetchEffort(db, scope, filters, config.EFFORT_DIVISIONS)
+      : Promise.resolve<EffortPanel | null>(null),
+    // Missed doctors (tmVisitCounts = 0) from the visit summary.
+    has('effort') && effortView.ok
+      ? fetchMissedSummary(db, scope, filters)
+      : Promise.resolve<MissedSummary | null>(null),
   ]);
 
   const cur = totals.cur;
   const prior = totals.prior;
-  const has = (p: string) => tab.panels.includes(p as never);
+  const cn = cnMonths.total;
 
   // The table is zero-filled, so a prior-year window can have rows but no sales.
   const hasPriorSales = prior !== null && prior.disp !== null;
   const geoNarrowed =
     scope.level === 'ZONE' || scope.level === 'REGION' || scope.level === 'HQ' ||
     filters.zone.length > 0 || filters.region.length > 0 || filters.hq.length > 0;
+  const brandFiltered = filters.brand.length > 0;
+  // Collection has no brand, so neither has PCPM.
+  const pcpmOf = (coll: number | null, tms: number | null | undefined, n: number) =>
+    brandFiltered ? null : M.pcpm(coll, tms ?? null, n);
 
   const res: TabResponse = {
     meta: {
       tab: tab.id,
-      dataVersion,
+      dataVersion: version.dataVersion,
       from: filters.from,
       to: filters.to,
       monthCount: months,
@@ -140,8 +258,19 @@ export async function buildLiveTab(
       queryMs: 0,
       priorFrom: hasPriorSales ? priorYear(filters.from) : null,
       priorTo: hasPriorSales ? priorYear(filters.to) : null,
+      cnPctFrom: pctMonths?.from ?? null,
+      cnPctTo: pctMonths?.to ?? null,
       unavailable: unavailableFor(tab, {
         hasPriorSales,
+        cnWithoutGross: cn.total !== null && (cur?.gross ?? null) === null,
+        manpower: people,
+        rxMonths: cur?.rxMonths ?? 0,
+        rxSource: { from: version.rxFrom, to: version.rxTo },
+        brandFiltered,
+        pcpmNoTms: !brandFiltered && (cur?.coll ?? null) !== null && !headcount?.tms,
+        effort: effortView,
+        effortMonths: effort?.months.length ?? 0,
+        effortSource: { from: version.effortFrom, to: version.effortTo },
         rcpaAsOf: cur?.rcpaAsOf ?? null,
         to: filters.to,
         geoNarrowed,
@@ -169,9 +298,12 @@ export async function buildLiveTab(
     };
   }
 
-  // No headcount source yet: PCPM is left blank.
+  // PCPM (Coll) = collection ÷ TMs in place ÷ months selected.
   if (has('pcpm')) {
-    res.pcpm = { budgetTm: NO_SOURCE, pcpmCollection: NO_SOURCE };
+    res.pcpm = {
+      budgetTm: headcount?.budgetTm ?? null,
+      pcpmCollection: pcpmOf(cur?.coll ?? null, headcount?.tms, months),
+    };
   }
 
   if (has('secondary')) {
@@ -197,7 +329,7 @@ export async function buildLiveTab(
   }
 
   if (has('creditNote')) {
-    res.creditNote = creditNote(cur);
+    res.creditNote = creditNote(cur, cn);
   }
 
   if (has('keyBrands')) {
@@ -206,48 +338,108 @@ export async function buildLiveTab(
       // The grid is a reading aid, not an export: 25 rows is already more than
       // anyone scans in a review meeting, and the CSV export carries the rest.
       rows: breakdown.slice(0, 25).map(keyBrandRow),
+      // From the rollup, never from summing rows. (I3)
+      total: [
+        'Total',
+        cur?.tgt ?? null,
+        cur?.disp ?? null,
+        cur?.collMat ?? null,
+        M.achPct(cur?.collMat ?? null, cur?.tgt ?? null),
+        M.grPct(cur?.disp ?? null, prior?.disp ?? null),
+        cur?.sec ?? null,
+        cur?.inventory ?? null,
+        cur?.rcpa ?? null,
+      ],
+      note: REASONS.brandCollNote,
     };
   }
 
   if (has('geoTable')) {
-    res.geoTable = geoTable(tab.grain, breakdown, cur, prior, geoNarrowed);
+    res.geoTable = geoTable(tab.grain, breakdown, cur, prior, geoNarrowed, cnNodes, cn, (code, coll) =>
+      code === null
+        ? pcpmOf(coll, headcount?.tms, months)
+        : pcpmOf(coll, headcount?.byNode.get(code)?.tms, months),
+    );
   }
 
   if (has('trends')) {
-    res.trends = trends(trend, tab.trendSeries);
+    // Headcount has no month: each month's PCPM divides by the TMs in place today.
+    res.trends = trends(trend, tab.trendSeries, cnMonths, manpower, (coll) => pcpmOf(coll, headcount?.tms, 1));
   }
 
   if (has('mix')) {
-    res.mix = mixPanel(mix, tab.mixDimension);
+    res.mix = mixPanel(mix, brandTotals, tab.mixDimension);
+  }
+
+  if (has('manpower')) {
+    res.manpower = manpower?.panel ?? null;
+  }
+
+  if (has('rx')) {
+    res.rx = rxPanel(cur, prior);
+  }
+
+  if (has('effort')) {
+    res.effort = effort && withMissed(effort, missed);
   }
 
   if (has('cnDetail')) {
-    // Stockist- and SKU-level CN needs the split feed, which has no source yet.
-    // Empty grids, not invented rows.
-    res.cnDetail = {
-      columns: ['name', 'code', 'expCn', 'srCn', 'pdCn', 'totalCn', 'cnPct'],
-      byStockist: [],
-      bySku: [],
-    };
+    res.cnDetail = { columns: CN_DETAIL_COLUMNS, ...cnDetail };
   }
 
-  void openYrMn;
   return res;
 }
 
-function creditNote(cur: Totals | null): CreditNotePanel {
-  // CR_NOTES is a single total and cannot be split into Exp / SR / PD.
+/**
+ * Drs Missed from the visit summary: the period's count, each month's, and the
+ * split by category. A period without visit data keeps them blank.
+ */
+function withMissed(effort: EffortPanel, missed: MissedSummary | null): EffortPanel {
+  if (!missed || missed.total === 0) return { ...effort, missedByCategory: null };
   return {
-    totalCn: cur?.cn ?? null,
-    expCn: NO_SOURCE,
-    srCn: NO_SOURCE,
-    pdCn: NO_SOURCE,
+    ...effort,
+    total: { ...effort.total, drsMissed: missed.total },
+    months: effort.months.map((m) => ({ ...m, drsMissed: missed.byMonth.get(m.yrMn) ?? null })),
+    missedByCategory: {
+      labels: missed.byCategory.map((c) => c.label),
+      values: missed.byCategory.map((c) => c.value),
+    },
+  };
+}
+
+function creditNote(cur: Totals | null, cn: CnFigures): CreditNotePanel {
+  // Credit notes from their view; closing O/S and the gross-sales denominator
+  // from the sales table. Each % sets only the months with sales against them.
+  const gross = cur?.gross ?? null;
+  return {
+    totalCn: cn.total,
+    expCn: cn.exp,
+    srCn: cn.sr,
+    pdCn: cn.pd,
     totalOs: cur?.os ?? null,
-    cnPct: M.cnPct(cur?.cn ?? null, cur?.gross ?? null),
-    expCnPct: NO_SOURCE,
-    srCnPct: NO_SOURCE,
-    pdCnPct: NO_SOURCE,
-    osPct: M.cnPct(cur?.os ?? null, cur?.gross ?? null),
+    cnPct: M.cnPct(cn.forPct.total, gross),
+    expCnPct: M.cnPct(cn.forPct.exp, gross),
+    srCnPct: M.cnPct(cn.forPct.sr, gross),
+    pdCnPct: M.cnPct(cn.forPct.pd, gross),
+    osPct: M.cnPct(cur?.os ?? null, gross),
+  };
+}
+
+/**
+ * Rx, Rxber, P/D for the period. Rxber is a monthly count of prescribers, so a
+ * period's figure is its per-month average over the months with Rx data; P/D/M
+ * is Rxns ÷ Rxber — the two figures shown beside it. Growth compares each with
+ * the same months a year earlier.
+ */
+function rxPanel(cur: Totals | null, prior: Totals | null): RxPanel {
+  const rxber = (t: Totals | null) => M.prescribersPerMonth(t?.rxber ?? null, t?.rxMonths ?? 0);
+  const pdm = (t: Totals | null) => M.perPrescriber(t?.rxns ?? null, rxber(t));
+  return {
+    rxns: { value: cur?.rxns ?? null, gr: M.grPct(cur?.rxns ?? null, prior?.rxns ?? null) },
+    rxber: { value: rxber(cur), gr: M.grPct(rxber(cur), rxber(prior)) },
+    pdm: { value: pdm(cur), gr: M.grPct(pdm(cur), pdm(prior)) },
+    from: cur?.rxFrom ?? null,
+    to: cur?.rxTo ?? null,
   };
 }
 
@@ -256,11 +448,9 @@ function keyBrandRow(n: NodeBreakdown): KeyBrandRow {
     n.name,
     n.tgt,
     n.disp,
-    // Collection has no brand grain — it is customer-level. Every brand row
-    // would carry 0, which reads as "collected nothing" rather than "not
-    // available", so it is null.
-    NO_SOURCE,
-    NO_SOURCE,
+    // COLLECTION has no brand; its split by product does.
+    n.collMat,
+    M.achPct(n.collMat, n.tgt),
     M.grPct(n.disp, n.priorDisp),
     n.sec,
     n.inventory,
@@ -274,6 +464,10 @@ function geoTable(
   cur: Totals | null,
   prior: Totals | null,
   geoNarrowed: boolean,
+  cnNodes: Map<string, CnNode>,
+  cnTotal: CnFigures,
+  /** PCPM for a node's collection — or, with a null code, the Total's. */
+  pcpmFor: (code: string | null, coll: number | null) => number | null,
 ) {
   let onTarget = 0;
   let growing = 0;
@@ -282,6 +476,8 @@ function geoTable(
   const inventoryApplies = grain === 'division' || grain === 'brand';
 
   const rows: GeoRow[] = nodes.map((n) => {
+    const node = cnNodes.get(n.code)?.cn;
+    const cn = node?.total ?? null;
     const achColl = M.achPct(n.coll, n.tgt);
     const dispGr = M.grPct(n.disp, n.priorDisp);
     if (achColl !== null && achColl >= 100) onTarget++;
@@ -296,15 +492,28 @@ function geoTable(
       n.coll,
       achColl,
       M.grPct(n.coll, n.priorColl),
-      NO_SOURCE, // PCPM — no headcount source
-      n.cn,
-      M.cnPct(n.cn, n.gross),
+      pcpmFor(n.code, n.coll),
+      cn,
+      M.cnPct(node?.forPct.total ?? null, n.gross),
       n.sec,
       inventoryApplies ? n.inventory : NO_SOURCE,
       n.rcpa,
       M.rcpaPctToSec(n.rcpa, n.sec),
     ] as GeoRow;
   });
+
+  // A node with credit notes but no sales rows in the period still gets its
+  // row, so the CN column ties to the Total.
+  const codes = nodes.map((n) => n.code);
+  const listed = new Set(codes);
+  for (const [nodeCode, node] of cnNodes) {
+    if (listed.has(nodeCode) || node.cn.total === null) continue;
+    codes.push(nodeCode);
+    rows.push([
+      node.name, null, null, null, null, null, null, NO_SOURCE,
+      node.cn.total, null, null, NO_SOURCE, null, null,
+    ]);
+  }
 
   // The Total row comes from the rollup, not from summing the rows: a ratio on
   // the total must be computed from the summed numerator and denominator, never
@@ -317,9 +526,9 @@ function geoTable(
     cur?.coll ?? null,
     M.achPct(cur?.coll ?? null, cur?.tgt ?? null),
     M.grPct(cur?.coll ?? null, prior?.coll ?? null),
-    NO_SOURCE,
-    cur?.cn ?? null,
-    M.cnPct(cur?.cn ?? null, cur?.gross ?? null),
+    pcpmFor(null, cur?.coll ?? null),
+    cnTotal.total,
+    M.cnPct(cnTotal.forPct.total, cur?.gross ?? null),
     cur?.sec ?? null,
     geoNarrowed ? NO_SOURCE : (cur?.inventory ?? null),
     cur?.rcpa ?? null,
@@ -329,7 +538,7 @@ function geoTable(
   return {
     grain,
     columns: GEO_COLUMNS,
-    codes: nodes.map((n) => n.code),
+    codes,
     rows,
     total,
     onTargetCount: onTarget,
@@ -338,39 +547,87 @@ function geoTable(
   };
 }
 
-function trends({ points, prior }: TrendResult, series: string[]): TrendsPanel {
+function trends(
+  { points, prior }: TrendResult,
+  series: string[],
+  cn: CnByMonth,
+  manpower: ManpowerResult | null,
+  pcpmOfMonth: (coll: number | null) => number | null,
+): TrendsPanel {
   const want = new Set(series);
-  const out: TrendsPanel = {
-    months: points.map((p) => p.yrMn),
-    labels: points.map((p) => label(p.yrMn)),
-  };
-  if (want.has('disp')) out.disp = points.map((p) => p.disp);
-  if (want.has('sec')) out.sec = points.map((p) => p.sec);
-  if (want.has('rcpa')) out.rcpa = points.map((p) => p.rcpa);
-  if (want.has('tgt')) out.tgt = points.map((p) => p.tgt);
-  if (want.has('coll')) out.coll = points.map((p) => p.coll);
-  if (want.has('achPct')) out.achPct = points.map((p) => M.achPct(p.coll, p.tgt));
-  if (want.has('grPct')) {
-    out.grPct = points.map((p) => M.grPct(p.disp, prior.get(priorYear(p.yrMn))?.disp ?? null));
+  // Months from either source: a month with credit notes but no sales rows
+  // still gets its point.
+  const factBy = new Map(points.map((p) => [p.yrMn, p]));
+  const months = [...new Set([...factBy.keys(), ...cn.byMonth.keys()])].sort((a, b) => a - b);
+  const fact = (k: Exclude<keyof TrendPoint, 'yrMn'>) => months.map((m) => factBy.get(m)?.[k] ?? null);
+  const cnOf = (k: keyof CnAmounts) => months.map((m) => cn.byMonth.get(m)?.[k] ?? null);
+  const gross = fact('gross');
+
+  const out: TrendsPanel = { months, labels: months.map(label) };
+  if (want.has('disp')) out.disp = fact('disp');
+  if (want.has('sec')) out.sec = fact('sec');
+  if (want.has('rcpa')) out.rcpa = fact('rcpa');
+  if (want.has('tgt')) out.tgt = fact('tgt');
+  if (want.has('coll')) out.coll = fact('coll');
+  if (want.has('pcpm')) {
+    const pcpm = fact('coll').map(pcpmOfMonth);
+    // A series of nulls would draw an empty axis: omitted instead.
+    if (pcpm.some((v) => v !== null)) out.pcpm = pcpm;
   }
-  if (want.has('cnPct')) out.cnPct = points.map((p) => M.cnPct(p.cn, p.gross));
-  // pcpm / rcpaPlan / rcpaActual / valuePerDr / cnExp / cnSr / cnPd are omitted
-  // entirely: their sources do not exist, and a series of nulls would draw an
-  // empty axis rather than communicating "not available".
+  if (want.has('achPct')) {
+    const coll = fact('coll');
+    const tgt = fact('tgt');
+    out.achPct = months.map((_, i) => M.achPct(coll[i] ?? null, tgt[i] ?? null));
+  }
+  if (want.has('grPct')) {
+    const disp = fact('disp');
+    out.grPct = months.map((m, i) => M.grPct(disp[i] ?? null, prior.get(priorYear(m))?.disp ?? null));
+  }
+  if (want.has('cnExp')) out.cnExp = cnOf('exp');
+  if (want.has('cnSr')) out.cnSr = cnOf('sr');
+  if (want.has('cnPd')) out.cnPd = cnOf('pd');
+  if (want.has('rxns')) out.rxns = fact('rxns');
+  if (want.has('rxber')) out.rxber = fact('rxber');
+  if (want.has('rxPd')) {
+    const rxns = fact('rxns');
+    const rxber = fact('rxber');
+    out.rxPd = months.map((_, i) => M.perPrescriber(rxns[i] ?? null, rxber[i] ?? null));
+  }
+  // Leavers per month; omitted when this view cannot show attrition.
+  if (manpower) {
+    const leftOf = (k: 'tm' | 'rm' | 'zsm') => months.map((m) => manpower.leftByMonth.get(m)?.[k] ?? 0);
+    if (want.has('leftTm')) out.leftTm = leftOf('tm');
+    if (want.has('leftRm')) out.leftRm = leftOf('rm');
+    if (want.has('leftZsm')) out.leftZsm = leftOf('zsm');
+  }
+  if (want.has('cnPct')) {
+    const total = cnOf('total');
+    out.cnPct = months.map((_, i) => M.cnPct(total[i] ?? null, gross[i] ?? null));
+  }
+  // rcpaPlan / rcpaActual / valuePerDr are omitted entirely: their
+  // sources do not exist, and a series of nulls would draw an empty axis
+  // rather than communicating "not available".
   return out;
 }
 
 function mixPanel(
   slices: Awaited<ReturnType<typeof fetchMix>>,
+  brands: BrandTotals,
   dimension: MixPanel['dimension'],
 ): MixPanel {
+  const labels = slices.map((s) => s.label);
+  const pie = (list: BrandTotals['sec']) => ({
+    labels: list.map((s) => s.label),
+    values: list.map((s) => s.value),
+  });
   return {
     dimension,
-    labels: slices.map((s) => s.label),
-    disp: slices.map((s) => s.disp),
-    // Collection carries no brand, so a per-group split is not derivable.
-    coll: slices.map(() => NO_SOURCE),
-    sec: slices.map((s) => s.sec),
-    rcpa: slices.map((s) => s.rcpa),
+    disp: { labels, values: slices.map((s) => s.disp) },
+    // COLLECTION carries no brand; its split by product does.
+    coll: { labels, values: slices.map((s) => s.collMat) },
+    collNote: REASONS.brandCollNote,
+    // Every brand, under the feeds' own brand names.
+    sec: pie(brands.sec),
+    rcpa: pie(brands.rcpa),
   };
 }

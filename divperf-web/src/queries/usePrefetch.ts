@@ -5,6 +5,7 @@ import { dashKeys, type Filters } from './keys';
 import { policy } from './policy';
 import { useSession } from '../auth/useSession';
 import { nextYrMn, prevYrMn } from '../lib/yrmn';
+import { DATA_CACHE_OFF } from './dataCache';
 
 /**
  * Prefetch the adjacent months on idle. (§8.4)
@@ -15,6 +16,7 @@ export function usePrefetchMonths(tab: string, filters: Filters) {
   const { scopeId, openYrMn } = useSession();
 
   useEffect(() => {
+    if (DATA_CACHE_OFF) return;
     const id = setTimeout(() => {
       for (const to of [prevYrMn(filters.to), nextYrMn(filters.to)]) {
         if (to > openYrMn) continue;
@@ -43,6 +45,7 @@ export function usePrefetchTab() {
   const { scopeId, openYrMn } = useSession();
 
   return (tab: string, filters: Filters) => {
+    if (DATA_CACHE_OFF) return () => {};
     const timer = setTimeout(() => {
       void qc.prefetchQuery({
         queryKey: dashKeys.tab(tab, scopeId, filters),

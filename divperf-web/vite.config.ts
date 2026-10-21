@@ -10,7 +10,9 @@ export default defineConfig({
     proxy: {
       // Keeps the browser same-origin in dev, so there is no CORS preflight on
       // the latency-critical tab request.
-      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true },
+      // xfwd: pass the browser's address on, so the API rate-limits and audits
+      // each user rather than seeing everyone as this machine.
+      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true, xfwd: true },
     },
   },
   build: {

@@ -9,9 +9,15 @@
  * Every value is a bound parameter. There is no string concatenation of user
  * input anywhere in this file: filter values only ever reach SQL as `@p0`,
  * `@p1`, … placeholders whose names this module generates.
+ *
+ * The same predicate serves both sources — the sales table and the credit-note
+ * view — through a matcher per source, so the scope rules exist once.
  */
 import { permittedFor, type Scope } from '../plugins/scope.js';
-import { DIMENSION, MONTH_COL, code, codeOrUnassigned, type DimensionName } from './sqlFragments.js';
+import {
+  CN_COLUMN, DIMENSION, MONTH_COL, PRODUCT_KEY, SOURCE, TERRITORY_ALIAS,
+  code, codeOrUnassigned, type DimensionName,
+} from './sqlFragments.js';
 import type { SqlParams } from './db.js';
 
 export interface PanelFilters {
@@ -24,20 +30,75 @@ export interface PanelFilters {
   hq: string[];
 }
 
+export type FilterKey = keyof Omit<PanelFilters, 'from' | 'to'>;
+
 export interface Predicate {
   /** Everything after WHERE, already scope-narrowed. */
   where: string;
   params: SqlParams;
+  /** The dimensions it constrains, after scope narrowing. */
+  constrained: FilterKey[];
 }
 
-/** Maps a filter dimension to the source column it constrains. */
-const FILTER_COLUMN: Record<keyof Omit<PanelFilters, 'from' | 'to'>, string> = {
-  division: DIMENSION.division.codeCol,
-  brand: DIMENSION.brand.codeCol,
-  zone: DIMENSION.zone.codeCol,
-  region: DIMENSION.region.codeCol,
-  hq: DIMENSION.hq.codeCol,
+/** How one source matches each filter dimension against a bound list, "(@p0, @p1)". */
+export type Matchers = Record<FilterKey, (list: string) => string>;
+
+/**
+ * The sales table: every dimension is a column on the row. `code()` so a
+ * filter on a code matches the same normalisation the GROUP BY uses —
+ * otherwise selecting a zone whose code has trailing whitespace in the source
+ * silently returns nothing.
+ */
+export const FACT_MATCH: Matchers = {
+  division: (l) => `${code(DIMENSION.division.codeCol)} IN ${l}`,
+  brand: (l) => `${code(DIMENSION.brand.codeCol)} IN ${l}`,
+  zone: (l) => `${code(DIMENSION.zone.codeCol)} IN ${l}`,
+  region: (l) => `${code(DIMENSION.region.codeCol)} IN ${l}`,
+  hq: (l) => `${code(DIMENSION.hq.codeCol)} IN ${l}`,
 };
+
+/**
+ * The credit-note view, which carries only division, territory and product.
+ * Zone and region come from the territory lookup (TERRITORY_JOIN), so a query
+ * whose predicate constrains either must include that join. A brand matches
+ * the products that carry it anywhere in the sales table — sales and secondary
+ * rows name some brands differently, and either name should find the product.
+ */
+export const CN_MATCH: Matchers = {
+  division: (l) => `${code(CN_COLUMN.division)} IN ${l}`,
+  hq: (l) => `${code(CN_COLUMN.hq)} IN ${l}`,
+  zone: (l) => `${TERRITORY_ALIAS}.zone_code IN ${l}`,
+  region: (l) => `${TERRITORY_ALIAS}.region_code IN ${l}`,
+  brand: (l) =>
+    `${CN_COLUMN.product} IN (SELECT ${PRODUCT_KEY} FROM ${SOURCE} WHERE ${code(DIMENSION.brand.codeCol)} IN ${l})`,
+};
+
+/**
+ * A source read through a derived table, `alias`, that carries normalised
+ * `div_code` and `hq_code` columns: the effort data and the headcount
+ * tables. Zone and region come from the territory lookup, joined on those two
+ * (territoryJoin). These sources count people and doctors, which are not
+ * split by brand, so a brand filter leaves them whole — the caller says so.
+ */
+export const territoryMatch = (alias: string): Matchers => ({
+  division: (l) => `${alias}.div_code IN ${l}`,
+  hq: (l) => `${alias}.hq_code IN ${l}`,
+  zone: (l) => `${TERRITORY_ALIAS}.zone_code IN ${l}`,
+  region: (l) => `${TERRITORY_ALIAS}.region_code IN ${l}`,
+  brand: () => '1 = 1',
+});
+
+export interface PredicateOptions {
+  /** How the source matches each dimension. The sales table by default. */
+  match?: Matchers;
+  /**
+   * Prefix for the generated list parameters, so two predicates can share one
+   * statement. The month parameters are shared: both cover the same window.
+   */
+  prefix?: string;
+  /** False for a source with no month column (headcount). */
+  months?: boolean;
+}
 
 /**
  * Builds the predicate for a month range plus the filter set, narrowed to the
@@ -47,26 +108,33 @@ const FILTER_COLUMN: Record<keyof Omit<PanelFilters, 'from' | 'to'>, string> = {
  * required in the cache key builder: making it optional is how national numbers
  * end up on an area manager's screen.
  */
-export function buildPredicate(scope: Scope, filters: PanelFilters): Predicate {
+export function buildPredicate(
+  scope: Scope,
+  filters: PanelFilters,
+  { match = FACT_MATCH, prefix = 'p', months = true }: PredicateOptions = {},
+): Predicate {
   const clauses: string[] = [];
   const params: SqlParams = {};
+  const constrained: FilterKey[] = [];
   let n = 0;
 
   // The month range. The month column is nvarchar, so it is compared as text;
   // zero-padded YYYYMM sorts identically either way.
-  params.pFrom = String(filters.from);
-  params.pTo = String(filters.to);
-  clauses.push(monthRange('pFrom', 'pTo'));
+  if (months) {
+    params.pFrom = String(filters.from);
+    params.pTo = String(filters.to);
+    clauses.push(monthRange('pFrom', 'pTo'));
+  } else {
+    clauses.push('1 = 1');
+  }
 
-  const inList = (column: string, values: string[]) => {
-    const names = values.map(() => `@p${n++}`);
+  const inList = (key: FilterKey, values: string[]) => {
+    const names = values.map(() => `@${prefix}${n++}`);
     values.forEach((v, i) => {
       params[names[i]!.slice(1)] = v;
     });
-    // `code()` so a filter on a code matches the same normalisation the
-    // GROUP BY uses — otherwise selecting a zone whose code has trailing
-    // whitespace in the source silently returns nothing.
-    clauses.push(`${code(column)} IN (${names.join(', ')})`);
+    clauses.push(match[key](`(${names.join(', ')})`));
+    constrained.push(key);
   };
 
   for (const key of ['division', 'brand', 'zone', 'region', 'hq'] as const) {
@@ -82,10 +150,10 @@ export function buildPredicate(scope: Scope, filters: PanelFilters): Predicate {
       clauses.push('1 = 0');
       continue;
     }
-    inList(FILTER_COLUMN[key], effective);
+    inList(key, effective);
   }
 
-  return { where: clauses.join('\n    AND '), params };
+  return { where: clauses.join('\n    AND '), params, constrained };
 }
 
 /** `month BETWEEN @from AND @to`, for the named parameters. */
@@ -97,7 +165,7 @@ export const monthRange = (from: string, to: string) => `${MONTH_COL} BETWEEN @$
  * scope's own level, and the user's divisions.
  */
 function narrow(
-  key: keyof typeof FILTER_COLUMN,
+  key: FilterKey,
   requested: string[],
   scope: Scope,
 ): string[] | null {
