@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { ScopeLevel } from '../types/api.js';
-import type { UserRecord } from '../users/repo.js';
+import type { UserRecord } from '../users/sessionUser.js';
 
 export interface Scope {
   level: ScopeLevel;

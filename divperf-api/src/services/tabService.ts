@@ -5,18 +5,29 @@
  * handles caching. It does not compute measures — per I3 all aggregation is in
  * SQL (Phase 2+) or in the mock generator (Phase 1). This layer shapes and
  * serialises.
+ *
+ * Caching — serve at once, rebuild when the data changes:
+ *   - Each view (scope × tab × filters) is cached with the data version it
+ *     was built on. A view on the current version is served as is.
+ *   - A view on an older version (the source has been reloaded) is still
+ *     served at once, marked `refreshing`, and rebuilt in the background.
+ *   - A view never built is built now — the one slow load.
+ *   - Identical concurrent builds share one warehouse round trip.
+ *   - Every request is noted as a recently used view, which the cache warmer
+ *     rebuilds after a data change (services/cacheWarmer.ts).
  */
 import type { FastifyBaseLogger } from 'fastify';
 import type { TabResponse, YrMn } from '../types/api.js';
 import type { CacheClient } from '../cache/CacheClient.js';
-import { ttlFor } from '../cache/CacheClient.js';
-import { tabKey, type CanonicalFilters } from '../cache/key.js';
+import { VIEW_TTL } from '../cache/CacheClient.js';
+import { hotKey, viewKey, type CanonicalFilters } from '../cache/key.js';
 import type { Scope } from '../plugins/scope.js';
 import { intersectScope, permittedFor } from '../plugins/scope.js';
 import { getTab, type TabConfig } from '../tabs/registry.js';
 import { notFound } from '../lib/errors.js';
+import { createLimiter } from '../lib/limit.js';
 import { config } from '../config.js';
-import { buildMockTab, OPEN_YR_MN, type MockFilters } from './mockData.js';
+import { buildMockTab, type MockFilters } from './mockData.js';
 import { getDb } from '../data/db.js';
 import { buildLiveTab } from './liveData.js';
 import { getDataVersion } from './versionService.js';
@@ -32,7 +43,28 @@ export interface TabRequest {
   hq: string[];
 }
 
+/** A cached view: the response and the data version it was built on. */
+export interface ViewEntry {
+  version: string;
+  data: TabResponse;
+}
+
+/** What the warmer needs to rebuild a recently used view without its user. */
+export interface HotView {
+  tab: string;
+  filters: CanonicalFilters;
+  scope: Scope;
+  lastAt: number;
+}
+
 const SLOW_QUERY_MS = 200;
+/** A recently used view is remembered this long — longer than WARM_HOT_HOURS. */
+const HOT_TTL = 60 * 60 * 48;
+
+/** Builds in progress, by view key: concurrent identical requests share one. */
+const building = new Map<string, Promise<ViewEntry>>();
+/** Background rebuilds of stale views, a few at a time. */
+const background = createLimiter(config.WARM_CONCURRENCY);
 
 export async function getTabData(
   req: TabRequest,
@@ -48,42 +80,90 @@ export async function getTabData(
   // Narrow every requested node set to what the user may see, before anything
   // is read and before the cache key is built. A request cannot widen its own
   // scope. (I5, §6.2)
-  const scoped = applyScope(req, scope);
-
-  const filters: CanonicalFilters = {
-    from: scoped.from,
-    to: scoped.to,
-    division: scoped.division,
-    brand: scoped.brand,
-    zone: scoped.zone,
-    region: scoped.region,
-    hq: scoped.hq,
-  };
+  const filters = canonical(applyScope(req, scope));
 
   // scopeHash is positional and required — a key cannot be built without it. (I6)
-  // The data version keys it too, so a source reload invalidates every entry.
-  const version = await getDataVersion();
-  const key = tabKey(scope.hash, tab.id, filters, version.dataVersion);
+  const key = viewKey(scope.hash, tab.id, filters);
+  const hot: HotView = { tab: tab.id, filters, scope, lastAt: Date.now() };
+  void cache.set(hotKey(key), hot, HOT_TTL).catch(() => {});
 
-  const cached = await cache.get<TabResponse>(key);
-  if (cached) {
-    return { ...cached, meta: { ...cached.meta, cached: true } };
+  const [entry, version] = await Promise.all([cache.get<ViewEntry>(key), getDataVersion()]);
+  if (entry) {
+    const current = entry.version === version.dataVersion;
+    if (!current && !building.has(key)) {
+      // The source changed: serve the previous figures now, rebuild behind them.
+      void background.run(() => buildView(tab, scope, filters, cache, log)).catch((err) =>
+        log.warn({ err, tab: tab.id }, 'background view rebuild failed'),
+      );
+    }
+    return { ...entry.data, meta: { ...entry.data.meta, cached: true, refreshing: !current } };
   }
 
-  const started = performance.now();
-  const data = await loadTab(tab, scope, scoped);
-  const queryMs = Math.round((performance.now() - started) * 100) / 100;
+  const built = await buildView(tab, scope, filters, cache, log);
+  return { ...built.data, meta: { ...built.data.meta, cached: false, refreshing: false } };
+}
 
-  data.meta.cached = false;
-  data.meta.queryMs = queryMs;
-  data.meta.effectiveScope = { level: scope.level, nodes: scope.nodes };
+/**
+ * Reads a view from the warehouse and caches it. Shared by requests and the
+ * cache warmer; a build already running for the same view is joined, not
+ * repeated.
+ */
+export function buildView(
+  tab: TabConfig,
+  scope: Scope,
+  filters: CanonicalFilters,
+  cache: CacheClient,
+  log: FastifyBaseLogger,
+): Promise<ViewEntry> {
+  const key = viewKey(scope.hash, tab.id, filters);
+  const running = building.get(key);
+  if (running) return running;
 
-  if (queryMs > SLOW_QUERY_MS) {
-    log.warn({ tab: tab.id, queryMs, filters }, 'slow tab query');
-  }
+  const job = (async () => {
+    // The version is read before the data, so a reload during the build marks
+    // the entry old rather than passing new-looking figures off as current.
+    const version = await getDataVersion();
+    const started = performance.now();
+    const data = await loadTab(tab, scope, filters);
+    const queryMs = Math.round((performance.now() - started) * 100) / 100;
 
-  await cache.set(key, data, ttlFor(scoped.to, version.openYrMn));
-  return data;
+    data.meta.queryMs = queryMs;
+    data.meta.effectiveScope = { level: scope.level, nodes: scope.nodes };
+
+    if (queryMs > SLOW_QUERY_MS) {
+      log.warn({ tab: tab.id, queryMs, filters }, 'slow tab query');
+    }
+
+    const entry: ViewEntry = { version: version.dataVersion, data };
+    await cache.set(key, entry, VIEW_TTL);
+    return entry;
+  })().finally(() => building.delete(key));
+
+  building.set(key, job);
+  return job;
+}
+
+/** The data version a view is cached on, if it is cached — the warmer skips current ones. */
+export async function cachedVersion(
+  cache: CacheClient,
+  scope: Scope,
+  tab: string,
+  filters: CanonicalFilters,
+): Promise<string | null> {
+  return (await cache.get<ViewEntry>(viewKey(scope.hash, tab, filters)))?.version ?? null;
+}
+
+/** The canonical filter set of a scoped request: what view keys are built from. */
+export function canonical(f: Omit<TabRequest, 'tab'>): CanonicalFilters {
+  return {
+    from: f.from,
+    to: f.to,
+    division: f.division,
+    brand: f.brand,
+    zone: f.zone,
+    region: f.region,
+    hq: f.hq,
+  };
 }
 
 export function applyScope<R extends Omit<TabRequest, 'tab'>>(req: R, scope: Scope): R {
@@ -101,16 +181,9 @@ export function applyScope<R extends Omit<TabRequest, 'tab'>>(req: R, scope: Sco
 }
 
 /** The one place that decides mock vs real. */
-async function loadTab(tab: TabConfig, scope: Scope, f: TabRequest): Promise<TabResponse> {
-  const filters = {
-    from: f.from, to: f.to,
-    division: f.division, brand: f.brand,
-    zone: f.zone, region: f.region, hq: f.hq,
-  };
-
+async function loadTab(tab: TabConfig, scope: Scope, filters: CanonicalFilters): Promise<TabResponse> {
   if (config.USE_MOCK_DATA) {
     return buildMockTab(tab.id, filters as MockFilters);
   }
-
   return buildLiveTab(tab, getDb(), scope, filters, await getDataVersion());
 }

@@ -9,6 +9,15 @@
 import type { TabMeta } from '../../types/api';
 import { UnavailableSummary } from './NoSource';
 
+/** "21-Oct 10:35" — when the figures were read from the warehouse. */
+function asOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).replace(' ', '-');
+  const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day} ${time}`;
+}
+
 export function DashboardFooter({
   meta,
   periodLabel,
@@ -35,6 +44,12 @@ export function DashboardFooter({
         )}
 
         <span className="ml-auto flex items-center gap-3 tnum">
+          {meta.builtAt && (
+            <span className="text-ink-2">
+              Figures as of {asOf(meta.builtAt)}
+              {meta.refreshing && <span className="text-warn"> · newer data is being loaded</span>}
+            </span>
+          )}
           <span>{meta.cached ? 'cached' : 'live'}</span>
           <span className={slow ? 'text-warn' : undefined}>
             {meta.queryMs >= 1000 ? `${(meta.queryMs / 1000).toFixed(1)} s` : `${meta.queryMs} ms`}

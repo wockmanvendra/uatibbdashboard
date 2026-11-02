@@ -7,9 +7,9 @@ import { TabPage } from './tabs/TabPage';
 import { DEFAULT_TAB } from './tabs/registry';
 import { useDataVersionSync } from './queries/useDataVersion';
 import { useFilterStore } from './store/filterStore';
+import { useSession } from './auth/useSession';
 import { useAuthStore } from './auth/authStore';
 import { LoginPage } from './auth/LoginPage';
-import { BuHeadLoginPage } from './auth/BuHeadLoginPage';
 
 export function App() {
   const signedIn = useAuthStore((s) => s.token !== null);
@@ -18,7 +18,6 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/login/bu-head" element={<BuHeadLoginPage />} />
         <Route path="*" element={<ToLogin />} />
       </Routes>
     );
@@ -35,6 +34,14 @@ function ToLogin() {
 function Dashboard() {
   // Poll the version token and invalidate only open-month queries. (§8.4)
   useDataVersionSync();
+
+  // Open on the fiscal year to date for the server's open month — the period
+  // the API pre-builds — unless the user has picked one.
+  const { openYrMn, dataVersion } = useSession();
+  const applyDefaultPeriod = useFilterStore((s) => s.applyDefaultPeriod);
+  useEffect(() => {
+    if (dataVersion) applyDefaultPeriod(openYrMn);
+  }, [dataVersion, openYrMn, applyDefaultPeriod]);
 
   const density = useFilterStore((s) => s.density);
   useEffect(() => {

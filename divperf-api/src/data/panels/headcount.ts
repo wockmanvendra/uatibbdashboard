@@ -14,9 +14,10 @@
  * One round trip, one pass: the selection's totals, and per node for a grid's
  * grain (ROLLUP).
  */
-import type { Db } from '../db.js';
+import type { Db, SqlParams } from '../db.js';
 import {
-  BUDGET_TM_SOURCE, DIMENSION, EMP_COUNT_SOURCE, SOURCE, TERRITORY_ALIAS, UNASSIGNED, code, num, territoryJoin,
+  BUDGET_TM_SOURCE, DIMENSION, EMP_COUNT_SOURCE, SOURCE, TERRITORY_ALIAS, UNASSIGNED,
+  canonicalDivision, code, divisionCode, num, territoryJoin,
 } from '../sqlFragments.js';
 import { buildPredicate, territoryMatch, type PanelFilters } from '../queryBuilder.js';
 import type { Scope } from '../../plugins/scope.js';
@@ -56,34 +57,35 @@ interface Row {
   tms: number | string | null;
 }
 
-export async function fetchHeadcount(
-  db: Db,
+export const HEADCOUNT_ALIAS = ALIAS;
+
+/**
+ * FROM (with the territory lookup, alias `t`) and WHERE for the selection's
+ * headcount rows, one per division and HQ, under alias `hc`: div_code,
+ * hq_code, budget_tm, tms.
+ */
+export function headcountRows(
   scope: Scope,
   filters: PanelFilters,
-  grain: HeadcountGrain | null,
-): Promise<Headcount> {
+): { from: string; where: string; params: SqlParams } {
   const p = buildPredicate(scope, filters, { match: territoryMatch(ALIAS), prefix: 'h', months: false });
 
   let where = p.where;
   // With no division constrained, hold to the divisions the dashboard covers:
   // the people view also has rows under division "0" with no HQ.
   if (!p.constrained.includes('division')) {
-    where += `\n    AND ${ALIAS}.div_code IN (SELECT DISTINCT ${code(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
+    where += `\n    AND ${ALIAS}.div_code IN (SELECT DISTINCT ${divisionCode(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
   }
+  return { from: headcountSource(), where, params: p.params };
+}
 
-  const source = `(
-    SELECT div_code, hq_code, SUM(budget_tm) AS budget_tm, SUM(tms) AS tms
-      FROM (
-        SELECT ${padDivision('division')} AS div_code, ${code('sap_code')} AS hq_code,
-               CAST(no_of_tm AS INT) AS budget_tm, CAST(NULL AS INT) AS tms
-          FROM ${BUDGET_TM_SOURCE}
-        UNION ALL
-        SELECT ${code('divisioncode')}, ${code('sapcode')}, CAST(NULL AS INT), CAST(emp_count AS INT)
-          FROM ${EMP_COUNT_SOURCE}
-      ) u
-     GROUP BY div_code, hq_code
-  ) ${ALIAS}
-  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}`;
+export async function fetchHeadcount(
+  db: Db,
+  scope: Scope,
+  filters: PanelFilters,
+  grain: HeadcountGrain | null,
+): Promise<Headcount> {
+  const { from: source, where, params } = headcountRows(scope, filters);
 
   // Without a grain, the total alone.
   const node = grain ? NODE[grain] : null;
@@ -92,7 +94,7 @@ export async function fetchHeadcount(
        SUM(${ALIAS}.budget_tm) AS budget_tm, SUM(${ALIAS}.tms) AS tms
   FROM ${source}
   WHERE ${where}${node ? `\n  GROUP BY ROLLUP(${node})` : ''}`,
-    p.params,
+    params,
   );
 
   const out: Headcount = { budgetTm: null, tms: null, byNode: new Map() };
@@ -102,4 +104,20 @@ export async function fetchHeadcount(
     else if (grain && r.node_code !== null) out.byNode.set(r.node_code, figures);
   }
   return out;
+}
+
+function headcountSource(): string {
+  return `(
+    SELECT div_code, hq_code, SUM(budget_tm) AS budget_tm, SUM(tms) AS tms
+      FROM (
+        SELECT ${canonicalDivision(padDivision('division'))} AS div_code, ${code('sap_code')} AS hq_code,
+               CAST(no_of_tm AS INT) AS budget_tm, CAST(NULL AS INT) AS tms
+          FROM ${BUDGET_TM_SOURCE}
+        UNION ALL
+        SELECT ${divisionCode('divisioncode')}, ${code('sapcode')}, CAST(NULL AS INT), CAST(emp_count AS INT)
+          FROM ${EMP_COUNT_SOURCE}
+      ) u
+     GROUP BY div_code, hq_code
+  ) ${ALIAS}
+  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}`;
 }

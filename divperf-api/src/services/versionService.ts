@@ -41,7 +41,12 @@ export interface DataVersion {
   effortTo: number | null;
 }
 
-const TTL_MS = 60_000;
+/**
+ * The fingerprint is re-read at most this often — the same interval as the
+ * cache warmer's check, so a data change is picked up within it and request
+ * handling itself never waits on the fingerprint query.
+ */
+const TTL_MS = config.DATA_CHECK_MINUTES * 60_000;
 
 let cached: { value: DataVersion; at: number } | null = null;
 let inflight: Promise<DataVersion> | null = null;
@@ -147,4 +152,15 @@ async function load(): Promise<DataVersion> {
 /** Called by the cache-flush endpoint so a reload is picked up immediately. */
 export function resetDataVersionCache(): void {
   cached = null;
+}
+
+/**
+ * Re-reads the fingerprint now — the cache warmer's check. Returns the current
+ * version and whether it differs from the one held before.
+ */
+export async function refreshDataVersion(): Promise<{ version: DataVersion; changed: boolean }> {
+  const before = cached?.value.dataVersion ?? null;
+  cached = null;
+  const version = await getDataVersion();
+  return { version, changed: before !== null && before !== version.dataVersion };
 }

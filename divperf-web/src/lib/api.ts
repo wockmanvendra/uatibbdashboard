@@ -7,16 +7,10 @@
  */
 import type {
   ApiError,
-  ChangePasswordBody,
   FiltersResponse,
-  ForgotPasswordBody,
-  ForgotPasswordResponse,
-  ForgotPasswordVerifyBody,
-  ForgotPasswordVerifyResponse,
   LoginResponse,
-  MissedDoctorsResponse,
-  PasswordLoginBody,
-  PasswordLoginResponse,
+  DetailListId,
+  DetailListResponse,
   OtpRequestBody,
   OtpRequestResponse,
   OtpVerifyBody,
@@ -105,18 +99,18 @@ function toQuery(f: Filters): string {
 export const fetchTab = (tab: string, filters: Filters, signal?: AbortSignal) =>
   request<TabResponse>(`/dashboard/${tab}?${toQuery(filters)}`, { signal });
 
-export interface MissedDoctorsQuery {
+export interface DetailQuery {
   page?: number;
   pageSize?: number;
   search?: string;
-  /** One category, or null for all. */
-  category?: string | null;
+  /** Chosen facet values by facet key ('all' for no filter). */
+  facets?: Record<string, string>;
   /** The whole list (up to 50,000 rows), for the CSV export. */
   all?: boolean;
 }
 
-/** The doctors behind "Drs Missed", for the dashboard's filters. */
-export function fetchMissedDoctors(filters: Filters, q: MissedDoctorsQuery, signal?: AbortSignal) {
+/** A detail list behind a clickable figure, for the dashboard's filters. */
+export function fetchDetailList(list: DetailListId, filters: Filters, q: DetailQuery, signal?: AbortSignal) {
   const p = new URLSearchParams(toQuery(filters));
   if (q.all) p.set('all', 'true');
   else {
@@ -124,8 +118,8 @@ export function fetchMissedDoctors(filters: Filters, q: MissedDoctorsQuery, sign
     p.set('pageSize', String(q.pageSize ?? 100));
   }
   if (q.search?.trim()) p.set('search', q.search.trim());
-  if (q.category) p.append('category', q.category);
-  return request<MissedDoctorsResponse>(`/effort/missed-doctors?${p.toString()}`, { signal });
+  for (const [k, v] of Object.entries(q.facets ?? {})) if (v) p.set(k, v);
+  return request<DetailListResponse>(`/details/${list}?${p.toString()}`, { signal });
 }
 
 export const fetchDataVersion = (signal?: AbortSignal) =>
@@ -136,21 +130,6 @@ export const requestOtp = (mobile: string) =>
 
 export const verifyOtp = (mobile: string, otp: string) =>
   request<LoginResponse>('/auth/otp/verify', { body: { mobile, otp } satisfies OtpVerifyBody });
-
-/** BU head sign-in: a session, or a token that can only set a new password. */
-export const loginWithPassword = (mobile: string, password: string) =>
-  request<PasswordLoginResponse>('/auth/password', { body: { mobile, password } satisfies PasswordLoginBody });
-
-export const changePassword = (changeToken: string, newPassword: string) =>
-  request<LoginResponse>('/auth/password/change', { body: { changeToken, newPassword } satisfies ChangePasswordBody });
-
-export const requestPasswordReset = (mobile: string) =>
-  request<ForgotPasswordResponse>('/auth/password/forgot', { body: { mobile } satisfies ForgotPasswordBody });
-
-export const verifyPasswordReset = (mobile: string, otp: string) =>
-  request<ForgotPasswordVerifyResponse>('/auth/password/forgot/verify', {
-    body: { mobile, otp } satisfies ForgotPasswordVerifyBody,
-  });
 
 export function fetchFilterOptions(
   sel: { division: string[]; zone: string[]; region: string[] },

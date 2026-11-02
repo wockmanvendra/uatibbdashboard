@@ -68,7 +68,17 @@ class MssqlDb implements Db {
       // slots, and a DW100c allows only four concurrent queries. Opening more
       // connections than that does not make anything faster — it just moves the
       // queue from our process into the warehouse, where we cannot see it.
-      pool: { min: 2, max: this.cfg.poolMax, idleTimeoutMillis: 60_000 },
+      //
+      // So queries queue here for a connection. A tab fires a dozen at once, and
+      // the cache warmer adds its own: the wait for a connection is allowed as
+      // long as a query may run, or a busy moment fails a user's request after
+      // the 30 s default rather than serving it a little later.
+      pool: {
+        min: 2,
+        max: this.cfg.poolMax,
+        idleTimeoutMillis: 60_000,
+        acquireTimeoutMillis: this.cfg.requestTimeoutMs,
+      },
       requestTimeout: this.cfg.requestTimeoutMs,
       connectionTimeout: 30_000,
     }).connect();

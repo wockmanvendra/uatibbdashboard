@@ -26,11 +26,13 @@ import type {
   ManpowerPanel,
   MixPanel,
   RxPanel,
+  StockistRow,
+  StockistTablePanel,
   TabResponse,
   TrendsPanel,
   YrMn,
 } from '../types/api.js';
-import { GEO_COLUMNS, KEY_BRAND_COLUMNS, CN_DETAIL_COLUMNS } from '../types/api.js';
+import { GEO_COLUMNS, KEY_BRAND_COLUMNS, CN_DETAIL_COLUMNS, STOCKIST_COLUMNS } from '../types/api.js';
 import { getTab } from '../tabs/registry.js';
 import * as M from '../lib/metrics.js';
 import { label, monthCount, monthRange, priorYear } from '../lib/yrmn.js';
@@ -346,6 +348,47 @@ function buildKeyBrands(f: MockFilters, total: NonNullable<ReturnType<typeof rol
       rcpa,
     ] as KeyBrandRow;
   });
+}
+
+/** One invented stockist per HQ in the selection, with that HQ's figures. */
+function buildStockistTable(f: MockFilters): StockistTablePanel {
+  const hqs = HQS.filter((h) => {
+    if (f.hq.length) return f.hq.includes(h.code);
+    if (f.region.length) return f.region.includes(h.region);
+    if (f.zone.length) return f.zone.includes(REGIONS.find((x) => x.code === h.region)?.zone ?? '');
+    return true;
+  });
+  const rows: StockistRow[] = [];
+  let growing = 0;
+  let degrowing = 0;
+  const acc = { disp: 0, coll: 0, sec: 0, os: 0, pDisp: 0, pColl: 0, pSec: 0 };
+  hqs.forEach((h, i) => {
+    const nf: MockFilters = { ...f, hq: [h.code] };
+    const cur = rollup(f.from, f.to, nf, 'stockist');
+    if (!cur) return;
+    const prior = rollup(priorYear(f.from), priorYear(f.to), nf, 'stockist');
+    const dispGr = M.grPct(cur.disp, prior?.disp ?? null);
+    if (dispGr !== null && dispGr > 0) growing++;
+    if (dispGr !== null && dispGr < 0) degrowing++;
+    acc.disp += cur.disp; acc.coll += cur.coll; acc.sec += cur.sec; acc.os += cur.os;
+    acc.pDisp += prior?.disp ?? 0; acc.pColl += prior?.coll ?? 0; acc.pSec += prior?.sec ?? 0;
+    rows.push([
+      `${h.name} Distributors`, String(20000 + i), h.code, h.name,
+      cur.disp, dispGr, cur.coll, M.grPct(cur.coll, prior?.coll ?? null),
+      cur.sec, M.grPct(cur.sec, prior?.sec ?? null), cur.os,
+    ]);
+  });
+  rows.sort((a, b) => (b[4] ?? 0) - (a[4] ?? 0));
+  return {
+    columns: STOCKIST_COLUMNS,
+    rows,
+    total: [
+      'Total', '', '', '', acc.disp, M.grPct(acc.disp, acc.pDisp || null), acc.coll, M.grPct(acc.coll, acc.pColl || null),
+      acc.sec, M.grPct(acc.sec, acc.pSec || null), acc.os,
+    ],
+    growingCount: growing,
+    degrowingCount: degrowing,
+  };
 }
 
 function buildGeoTable(grain: 'zone' | 'region' | 'hq', f: MockFilters, months: number) {
@@ -703,6 +746,8 @@ export function buildMockTab(tabId: string, f: MockFilters): TabResponse {
       unassignedRows: 0,
       cached: false,
       queryMs: 0,
+      builtAt: new Date().toISOString(),
+      refreshing: false,
       priorFrom: prior ? priorFrom : null,
       priorTo: prior ? priorTo : null,
       // The mock invents sales for every month, so CN% covers the whole period.
@@ -781,6 +826,22 @@ export function buildMockTab(tabId: string, f: MockFilters): TabResponse {
   }
   if (has('effort')) {
     res.effort = empty ? null : buildEffort(f);
+  }
+  if (has('hospitals')) {
+    // RESEARCH only, as live: shown when division 84 is chosen.
+    res.hospitals = f.division.includes('84')
+      ? {
+          total: { label: 'Total', count: 1607, covered: null, coveredPct: null, missed: null },
+          tiers: [['Tier I', 149], ['Tier II', 406], ['Tier III', 224], ['Tier IV', 102]].map(([label, count]) => ({
+            label: label as string, count: count as number, covered: null, coveredPct: null, missed: null,
+          })),
+          untiered: 726,
+          months: [],
+        }
+      : null;
+  }
+  if (has('stockistTable')) {
+    res.stockistTable = buildStockistTable(f);
   }
   if (has('cnDetail')) {
     res.cnDetail = empty

@@ -123,12 +123,19 @@ const ALIAS = EFFORT_ALIAS;
 const T = TERRITORY_ALIAS;
 const dec = (col: string, scale = 2) => `TRY_CAST(x.${col} AS DECIMAL(18,${scale}))`;
 
-export async function fetchEffort(
-  db: Db,
+const text = (col: string, n = 200) => `CAST(${code(`x.${col}`)} AS NVARCHAR(${n}))`;
+
+/**
+ * FROM and WHERE for the selection's territory rows, under alias `ef`, with
+ * yearMonth, div_code, hq_code, the numeric measures (tc, a, b, c, met, fcov,
+ * calls, fd, hosp_total, hosp_met) and the names a list shows (zone_name, region_name, hq_name,
+ * emp_code, emp_name). Null when no division name is mapped.
+ */
+export function effortTerritories(
   scope: Scope,
   filters: PanelFilters,
   namesByDivision: Record<string, string>,
-): Promise<EffortPanel> {
+): { from: string; where: string; params: SqlParams } | null {
   const p = buildPredicate(scope, filters, { match: territoryMatch(ALIAS), prefix: 'e' });
   const params: SqlParams = { ...p.params };
 
@@ -145,13 +152,45 @@ export async function fetchEffort(
       return `SELECT @ed${i} AS div_code, @en${i} AS div_name, ${uses.get(name)! > 1 ? 1 : 0} AS shared`;
     })
     .join('\n          UNION ALL ');
-  if (!divisions) return { total: NO_EFFORT, months: [] };
+  if (!divisions) return null;
 
   // The lookup scans the sales table, so it is joined only when needed.
   const joinTerritory = shared || p.constrained.includes('zone') || p.constrained.includes('region');
   const keepShared = shared
     ? `\n    AND (${ALIAS}.shared = 0 OR ${T}.hq_code IS NOT NULL)`
     : '';
+
+  return {
+    from: `(
+    SELECT LEFT(x.effortdate, 6) AS yearMonth, dm.div_code, dm.shared,
+           ${text('sap_code', 50)} AS hq_code,
+           ${text('zone_name')} AS zone_name, ${text('region_name')} AS region_name,
+           ${text('locat_name')} AS hq_name, ${text('emp_code', 50)} AS emp_code, ${text('emp_name')} AS emp_name,
+           ${dec('total_count')} AS tc, ${dec('a_count')} AS a, ${dec('b_count')} AS b, ${dec('c_count')} AS c,
+           ${dec('total_dr_count_visited')} AS met,
+           ${dec('total_freq_dr_coverage', 4)} AS fcov,
+           ${dec('total_dr_call_count')} AS calls,
+           ${dec('field_days')} AS fd,
+           ${dec('hospital_total_count')} AS hosp_total,
+           ${dec('total_hospital_count_visited')} AS hosp_met
+      FROM ${EFFORT_SOURCE} x
+      JOIN (${divisions}) dm
+        ON dm.div_name = LTRIM(RTRIM(x.division_name))
+     WHERE LTRIM(RTRIM(x.locat_type)) = 'Territory'
+  ) ${ALIAS}${joinTerritory ? `\n  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}` : ''}`,
+    where: `${p.where}${keepShared}`,
+    params,
+  };
+}
+
+export async function fetchEffort(
+  db: Db,
+  scope: Scope,
+  filters: PanelFilters,
+  namesByDivision: Record<string, string>,
+): Promise<EffortPanel> {
+  const q = effortTerritories(scope, filters, namesByDivision);
+  if (!q) return { total: NO_EFFORT, months: [] };
 
   const rows = await db.all<Row>(
     `SELECT ${ALIAS}.yearMonth AS ym,
@@ -161,23 +200,11 @@ export async function fetchEffort(
        SUM(${ALIAS}.calls) AS calls,
        SUM(${ALIAS}.fd) AS fd,
        COUNT(CASE WHEN ${ALIAS}.fd > 0 THEN 1 END) AS fd_terr
-  FROM (
-    SELECT LEFT(x.effortdate, 6) AS yearMonth, dm.div_code, dm.shared,
-           ${code('x.sap_code')} AS hq_code,
-           ${dec('total_count')} AS tc, ${dec('a_count')} AS a, ${dec('b_count')} AS b, ${dec('c_count')} AS c,
-           ${dec('total_dr_count_visited')} AS met,
-           ${dec('total_freq_dr_coverage', 4)} AS fcov,
-           ${dec('total_dr_call_count')} AS calls,
-           ${dec('field_days')} AS fd
-      FROM ${EFFORT_SOURCE} x
-      JOIN (${divisions}) dm
-        ON dm.div_name = LTRIM(RTRIM(x.division_name))
-     WHERE LTRIM(RTRIM(x.locat_type)) = 'Territory'
-  ) ${ALIAS}${joinTerritory ? `\n  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}` : ''}
-  WHERE ${p.where}${keepShared}
+  FROM ${q.from}
+  WHERE ${q.where}
   GROUP BY ${ALIAS}.yearMonth
   ORDER BY ${ALIAS}.yearMonth`,
-    params,
+    q.params,
   );
 
   const total = { ...ZERO };

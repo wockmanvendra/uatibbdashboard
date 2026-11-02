@@ -37,6 +37,8 @@ interface DataTableProps {
    * first column is always kept — it is the row's identity.
    */
   hideEmptyColumns?: boolean;
+  /** Render only the first `limit` rows after sorting — for grids of thousands. */
+  limit?: number;
 }
 
 function renderCell(v: string | number | null, format: CellFormat) {
@@ -61,7 +63,7 @@ function renderCell(v: string | number | null, format: CellFormat) {
 
 export function DataTable({
   columns: allColumns, rows, total, caption, defaultSort,
-  maxHeight = 340, hideEmptyColumns = false,
+  maxHeight = 340, hideEmptyColumns = false, limit,
 }: DataTableProps) {
   const [sort, setSort] = useState<{ index: number; dir: 'asc' | 'desc' } | null>(
     defaultSort === undefined ? null : { index: defaultSort, dir: 'desc' },
@@ -90,6 +92,8 @@ export function DataTable({
       return dir === 'asc' ? cmp : -cmp;
     });
   }, [rows, sort]);
+
+  const shown = limit === undefined ? sorted : sorted.slice(0, limit);
 
   const toggle = (index: number) =>
     setSort((s) =>
@@ -131,7 +135,7 @@ export function DataTable({
         </thead>
 
         <tbody>
-          {sorted.map((row, i) => (
+          {shown.map((row, i) => (
             <tr key={String(row[0]) + i}>
               {columns.map((c) => {
                 const Tag = c.index === 0 ? 'th' : 'td';

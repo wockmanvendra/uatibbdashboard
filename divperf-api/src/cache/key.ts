@@ -42,19 +42,26 @@ export function canonToString(f: CanonicalFilters): string {
 }
 
 /**
- * `dataVersion` is part of the key: when any source is reloaded, every cached
- * response becomes unreachable, so a range of "closed" months — cached for a
- * week — can never be served from before the reload.
+ * One cached view: a tab for a scope and a filter set. The data version is NOT
+ * in the key — it is stored in the entry — so after a reload the previous copy
+ * can still be served at once while the view is rebuilt. The tab service never
+ * serves an entry as current unless its version is the current one.
  */
-export function tabKey(
-  scopeHash: string,
-  tab: string,
-  filters: CanonicalFilters,
-  dataVersion: string,
-): string {
+export function viewKey(scopeHash: string, tab: string, filters: CanonicalFilters): string {
   assertScope(scopeHash);
-  return `${CACHE_NS}:${scopeHash}:tab:${tab}:${dataVersion}:${canonToString(filters)}`;
+  return `${CACHE_NS}:${scopeHash}:view:${tab}:${canonToString(filters)}`;
 }
+
+/**
+ * "This view was opened recently": what the warmer rebuilds after a data
+ * change. Holds the request, not the data, under its own prefix so the warmer
+ * can list them in one scan.
+ */
+export const hotPrefix = (): string => `${CACHE_NS}:hot:`;
+export const hotKey = (view: string): string => `${hotPrefix()}${view.slice(CACHE_NS.length + 1)}`;
+
+/** Held by the one process that is rebuilding views. */
+export const warmLockKey = (): string => `${CACHE_NS}:meta:warm-lock`;
 
 export function filtersKey(
   scopeHash: string,

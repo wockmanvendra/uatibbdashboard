@@ -83,28 +83,34 @@ interface Row {
 
 const date = (col: string) => `TRY_CONVERT(date, ${col}, 112)`;
 
+/** Tenure at exit, DOL − DOJ by calendar dates: under6m | m6to12 | over1y; NULL without a DOJ. */
+export const TENURE_CASE = `CASE WHEN ${date('DOJ')} IS NULL THEN NULL
+                WHEN ${date('DOL')} < DATEADD(month, 6, ${date('DOJ')}) THEN 'under6m'
+                WHEN ${date('DOL')} < DATEADD(year, 1, ${date('DOJ')}) THEN 'm6to12'
+                ELSE 'over1y' END`;
+
+/** The cost-centre clause for a manpowerScope result, binding @k0, @k1, … into `params`. */
+export function costCentreClause(costCentres: string[] | null, params: SqlParams): string {
+  if (costCentres === null) return '';
+  const names = costCentres.map((c, i) => {
+    params[`k${i}`] = c;
+    return `@k${i}`;
+  });
+  return names.length ? `AND LTRIM(RTRIM(KOSTL)) IN (${names.join(', ')})` : 'AND 1 = 0';
+}
+
 export async function fetchManpower(
   db: Db,
   filters: PanelFilters,
   costCentres: string[] | null,
 ): Promise<ManpowerResult> {
   const params: SqlParams = { mFrom: String(filters.from), mTo: String(filters.to) };
-  let centres = '';
-  if (costCentres !== null) {
-    const names = costCentres.map((c, i) => {
-      params[`k${i}`] = c;
-      return `@k${i}`;
-    });
-    centres = names.length ? `AND LTRIM(RTRIM(KOSTL)) IN (${names.join(', ')})` : 'AND 1 = 0';
-  }
+  const centres = costCentreClause(costCentres, params);
 
   const rows = await db.all<Row>(
     `WITH base AS (
     SELECT 'left' AS kind, LTRIM(RTRIM(EMP_TYPE)) AS cadre, CAST(LEFT(DOL, 6) AS INT) AS ym,
-           CASE WHEN ${date('DOJ')} IS NULL THEN NULL
-                WHEN ${date('DOL')} < DATEADD(month, 6, ${date('DOJ')}) THEN 'under6m'
-                WHEN ${date('DOL')} < DATEADD(year, 1, ${date('DOJ')}) THEN 'm6to12'
-                ELSE 'over1y' END AS tenure
+           ${TENURE_CASE} AS tenure
       FROM ${HR_EXIT_SOURCE}
      WHERE LEFT(DOL, 6) BETWEEN @mFrom AND @mTo ${centres}
     UNION ALL

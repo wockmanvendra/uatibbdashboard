@@ -1,10 +1,9 @@
 /**
- * Field-force sign-in: registered mobile number, then a one-time password sent
- * by SMS and email — the D2D portal's TM login flow, against this dashboard's
- * own user database.
+ * Sign-in for everyone — field force, BU heads and admins: the mobile number
+ * registered in the Central User Service, then the one-time password it emails.
  */
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiRequestError, requestOtp, verifyOtp } from '../lib/api';
 import { useAuthStore } from './authStore';
 import { OtpInput } from './OtpInput';
@@ -31,7 +30,8 @@ export function LoginPage() {
   const [mobile, setMobile] = useState('');
   const [otp, setOtp] = useState<string[]>(EMPTY_OTP);
   const [countdown, setCountdown] = useState(0);
-  const [devOtp, setDevOtp] = useState<string | null>(null);
+  /** Where the code was emailed, masked — e.g. "r***@wockhardt.com". */
+  const [sentTo, setSentTo] = useState('');
   const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
   const [error, setError] = useState('');
 
@@ -59,8 +59,7 @@ export function LoginPage() {
     setBusy('send');
     try {
       const res = await requestOtp(mobile);
-      // Outside production the API returns the code; show it for testing.
-      setDevOtp(res.devOtp ?? null);
+      setSentTo(res.sentTo);
       setOtp(EMPTY_OTP);
       setCountdown(res.resendInSeconds);
       if (step === 'otp') focusFirstOtpBox();
@@ -99,7 +98,7 @@ export function LoginPage() {
   const changeNumber = () => {
     setStep('mobile');
     setOtp(EMPTY_OTP);
-    setDevOtp(null);
+    setSentTo('');
     setCountdown(0);
     setError('');
   };
@@ -123,10 +122,8 @@ export function LoginPage() {
             </h2>
             <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">
               {step === 'mobile'
-                ? 'Use the mobile number registered with your field-force profile.'
-                : devOtp
-                  ? 'Enter the 6-digit code.'
-                  : 'We sent a 6-digit code to your registered mobile and email.'}
+                ? 'Use the mobile number registered for you in the Wockhardt user service.'
+                : 'We emailed you a 6-digit code.'}
             </p>
           </header>
 
@@ -179,26 +176,6 @@ export function LoginPage() {
 
             {step === 'otp' && (
               <div className="rise-in flex flex-col gap-3">
-                {devOtp && (
-                  <div className="login-dev-banner" role="status">
-                    <span className="login-dev-tag">Test</span>
-                    <span className="flex-1 text-[12px] leading-snug">
-                      Testing mode — your OTP is{' '}
-                      <strong className="font-mono text-[14px] tracking-[0.2em]">{devOtp}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      className="login-link"
-                      onClick={() => {
-                        setOtp(devOtp.split(''));
-                        setError('');
-                      }}
-                    >
-                      Fill
-                    </button>
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-1.5" ref={otpGroupRef}>
                   <span id="login-otp-label" className="login-label">
                     One-time password
@@ -215,7 +192,7 @@ export function LoginPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-[12px] text-ink-3" aria-live="polite">
-                  <span>Sent to {formatMobile(mobile)}</span>
+                  <span>Sent to {sentTo || `the email for ${formatMobile(mobile)}`}</span>
                   {countdown > 0 ? (
                     <span className="tnum font-mono">Resend in {countdown}s</span>
                   ) : (
@@ -265,13 +242,8 @@ export function LoginPage() {
 
           <p className="mt-6 border-t border-rule-soft pt-4 text-[12px] leading-relaxed text-ink-3">
             You will see figures for your own territory — HQ, region, zone or division — as set in
-            Infinity&rsquo;s field structure.
-          </p>
-          <p className="mt-3 text-[12px] text-ink-3">
-            BU head?{' '}
-            <Link to="/login/bu-head" state={location.state} className="login-link">
-              Sign in with your password
-            </Link>
+            Infinity&rsquo;s field structure. No access? Ask your administrator to add you to the
+            Wockhardt user service.
           </p>
         </div>
       </main>
@@ -279,7 +251,7 @@ export function LoginPage() {
   );
 }
 
-/** The left-hand brand panel, shared with the BU head sign-in. */
+/** The left-hand brand panel. */
 export function BrandPanel() {
   return (
     <aside className="login-brand rise-in">

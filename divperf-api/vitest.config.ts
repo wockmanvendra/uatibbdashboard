@@ -1,19 +1,19 @@
 import { defineConfig } from 'vitest/config';
-import { TEST_USER_DATABASE_URL } from './src/test/testDb.js';
 
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
-    globalSetup: ['./src/test/globalSetup.ts'],
-    // Test files share one user database.
-    fileParallelism: false,
     env: {
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
       USE_MOCK_DATA: 'true',
       CACHE_DRIVER: 'memory',
-      USER_DATABASE_URL: TEST_USER_DATABASE_URL,
       AUTH_RATE_LIMIT: '100000',
+      // Sign-in goes to a stand-in Central User Service (src/test/central.ts).
+      CENTRAL_USER_SERVICE_URL: 'http://central.test',
+      CENTRAL_CLIENT_ID: 'ibb-insights',
+      CENTRAL_API_KEY: 'test-api-key',
+      ALL_DIVISION_MOBILES: '9000000009',
     },
   },
 });

@@ -15,8 +15,7 @@ import { useAuthStore } from '../auth/authStore';
 import { useFilterStore } from '../store/filterStore';
 import type {
   EffortFigures,
-  MissedDoctorRow,
-  MissedDoctorsResponse,
+  DetailListResponse,
   TabResponse,
   VersionResponse,
   FiltersResponse,
@@ -80,6 +79,8 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
       unassignedRows: 0,
       cached: false,
       queryMs: 12,
+      builtAt: '2026-10-21T05:05:00.000Z',
+      refreshing: false,
       priorFrom: null,
       priorTo: null,
       cnPctFrom: 202604,
@@ -133,68 +134,119 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
 
 let tabPayload: TabResponse = tab();
 
-/** The missed-doctor list the API answers: 150 doctors, A and B, paged and filtered. */
-const MISSED: MissedDoctorRow[] = Array.from({ length: 150 }, (_, i) => ({
+/** The doctor list the API answers: 150 missed (A and B) and 50 met, paged and filtered. */
+type DetailRow = DetailListResponse['rows'][number];
+
+const DOCTORS: DetailRow[] = Array.from({ length: 200 }, (_, i) => ({
   month: 202608,
   zone: 'Chennai',
   region: 'Cochin',
   hq: i < 3 ? 'Kannur' : 'Trichur',
-  hqCode: 'WTKANN',
-  tmName: i === 0 ? null : 'Arun E A',
-  tmCode: i === 0 ? null : '829867',
+  tm: i === 0 ? 'Vacant' : 'Arun E A',
+  doctor: i === 1 ? 'Jikku Jacob' : `Doctor ${i}`,
   doctorCode: `D${i}`,
-  doctorName: i === 1 ? 'Jikku Jacob' : `Doctor ${i}`,
   speciality: 'Surgeon',
   category: i % 3 === 0 ? 'A' : 'B',
+  tmVisits: i < 150 ? 0 : 2,
   rmVisits: 0,
   zsmVisits: 0,
 }));
-const missedCalls: URL[] = [];
-function missedFor(url: string): MissedDoctorsResponse {
+const LISTS: Record<string, Omit<DetailListResponse, 'rows' | 'total' | 'page' | 'pageSize'> & { rows: DetailRow[] }> = {
+  doctors: {
+    title: 'Doctors',
+    columns: [
+      { key: 'month', label: 'Month', format: 'month' },
+      { key: 'hq', label: 'HQ', format: 'text' },
+      { key: 'tm', label: 'TM', format: 'text' },
+      { key: 'doctor', label: 'Doctor', format: 'text' },
+      { key: 'category', label: 'Cat.', format: 'text' },
+      { key: 'tmVisits', label: 'TM visits', format: 'number' },
+    ],
+    facets: [
+      { key: 'status', label: 'Status', options: [{ value: 'missed', label: 'Missed' }, { value: 'met', label: 'Met' }, { value: 'all', label: 'All' }] },
+      { key: 'category', label: 'Category', options: [{ value: 'all', label: 'All' }, { value: 'A', label: 'A' }, { value: 'B', label: 'B' }] },
+    ],
+    rows: DOCTORS,
+  },
+  leavers: {
+    title: 'Leavers',
+    columns: [
+      { key: 'name', label: 'Name', format: 'text' },
+      { key: 'cadre', label: 'Cadre', format: 'text' },
+      { key: 'dol', label: 'Left', format: 'date' },
+      { key: 'reason', label: 'Reason for leaving', format: 'text' },
+    ],
+    facets: [{ key: 'cadre', label: 'Cadre', options: [{ value: 'all', label: 'All' }, { value: 'TM', label: 'TM' }, { value: 'RM', label: 'RM' }] }],
+    rows: [
+      { name: 'RAJESH THAKUR', cadre: 'TM', dol: '20260903', reason: 'Better Career prospects' },
+      { name: 'NARESHKUMAR S', cadre: 'TM', dol: '20260901', reason: 'Non- Performance' },
+      { name: 'A REGIONAL MANAGER', cadre: 'RM', dol: '20260815', reason: 'Growth Opportunities' },
+    ],
+  },
+  hospitals: {
+    title: 'Hospital master list',
+    columns: [
+      { key: 'hospital', label: 'Hospital', format: 'text' },
+      { key: 'tier', label: 'Tier', format: 'text' },
+    ],
+    facets: [{ key: 'tier', label: 'Tier', options: [{ value: 'all', label: 'All' }, { value: 'Tier 1', label: 'Tier I' }, { value: 'Tier 2', label: 'Tier II' }] }],
+    rows: [
+      { hospital: 'FORTIS HOSPITAL', tier: 'Tier I' },
+      { hospital: 'ARKAN HOSPITAL', tier: 'Tier II' },
+    ],
+  },
+  'hq-headcount': {
+    title: 'HQ headcount & PCPM',
+    columns: [
+      { key: 'hq', label: 'HQ', format: 'text' },
+      { key: 'budgetTm', label: 'Budget TM', format: 'number' },
+      { key: 'tms', label: 'TMs in place', format: 'number' },
+      { key: 'vacancy', label: 'Vacancy', format: 'number' },
+      { key: 'pcpm', label: 'PCPM (₹ L)', format: 'money' },
+    ],
+    facets: [],
+    rows: [
+      { hq: 'CHANDIGARH 2', budgetTm: 1, tms: null, vacancy: 1, pcpm: null },
+      { hq: 'SHIMLA', budgetTm: 2, tms: 2, vacancy: 0, pcpm: 450_000 },
+    ],
+  },
+};
+const detailCalls: URL[] = [];
+/** /samples/hospital-coverage.json as deployed, or null for "not deployed". */
+let hospitalSample: unknown = null;
+function detailFor(url: string): DetailListResponse {
   const u = new URL(url, 'http://test');
-  missedCalls.push(u);
-  const search = (u.searchParams.get('search') ?? '').toLowerCase();
-  const cats = u.searchParams.getAll('category');
-  const rows = MISSED.filter(
-    (r) => (!search || r.doctorName!.toLowerCase().includes(search)) && (!cats.length || cats.includes(r.category!)),
+  detailCalls.push(u);
+  const def = LISTS[u.pathname.split('/').pop()!]!;
+  const p = u.searchParams;
+  const search = (p.get('search') ?? '').toLowerCase();
+  const status = p.get('status') ?? 'missed';
+  const rows = def.rows.filter((r) =>
+    (!search || Object.values(r).some((v) => typeof v === 'string' && v.toLowerCase().includes(search))) &&
+    (!('tmVisits' in r) || status === 'all' || (status === 'missed' ? r.tmVisits === 0 : Number(r.tmVisits) > 0)) &&
+    ['category', 'cadre'].every((k) => !p.get(k) || p.get(k) === 'all' || r[k] === p.get(k)) &&
+    (!p.get('tier') || p.get('tier') === 'all' || r.tier === `Tier ${['I', 'II', 'III', 'IV'][Number(p.get('tier')!.slice(-1)) - 1]}`),
   );
-  const all = u.searchParams.get('all') === 'true';
-  const page = Number(u.searchParams.get('page') ?? 1);
-  const pageSize = all ? 50_000 : Number(u.searchParams.get('pageSize') ?? 100);
-  return { total: rows.length, page, pageSize, rows: rows.slice((page - 1) * pageSize, page * pageSize) };
+  const page = Number(p.get('page') ?? 1);
+  const pageSize = p.get('all') === 'true' ? 50_000 : Number(p.get('pageSize') ?? 100);
+  return { ...def, total: rows.length, page, pageSize, rows: rows.slice((page - 1) * pageSize, page * pageSize) };
 }
 let tabStatus = 200;
 /** What the API answers to the correct OTP: a session, or an error. */
 let verifyReply: { status: number; body: unknown } = { status: 200, body: session };
 
-const BU_MOBILE = '9100000001';
-const BU_PASSWORD = 'Temp#Pass1';
-const buSession: LoginResponse = {
-  token: 'bu-token',
-  user: {
-    id: 'acct:6f1c',
-    name: 'Neha Rao',
-    role: 'bu-head',
-    mobile: BU_MOBILE,
-    scopeId: 'division-85',
-    effectiveScope: { level: 'DIVISION', nodes: ['85'] },
-  },
-};
-/** First sign-in: the API demands a new password before a session. */
-let buMustChange = true;
-const BU_RESET_CODE = '615204';
-/** The API returns the code outside production only. */
-let apiReturnsOtp = true;
+/** The code the user reads from the email the Central User Service sends. */
 const DEV_OTP = '482913';
 
 beforeEach(() => {
   tabPayload = tab();
   tabStatus = 200;
+  hospitalSample = null;
   verifyReply = { status: 200, body: session };
-  apiReturnsOtp = true;
-  buMustChange = true;
   localStorage.clear();
   useFilterStore.getState().clearAll(); // the store outlives each render
+  useFilterStore.setState({ from: 202604, to: 202608, periodReady: false, periodChosen: false });
+  version.openYrMn = 202608;
   useAuthStore.setState({ token: session.token, user: session.user });
   vi.stubGlobal(
     'fetch',
@@ -208,37 +260,16 @@ beforeEach(() => {
         });
       if (url === '/api/auth/otp/request') {
         return body.mobile === '9000000002'
-          ? json({ expiresInSeconds: 600, resendInSeconds: 30, ...(apiReturnsOtp ? { devOtp: DEV_OTP } : {}) })
-          : json({ error: { code: 'NOT_FOUND', message: 'This mobile number is not registered for the dashboard.' } }, 404);
+          ? json({ sentTo: 'a***@wockhardt.com', expiresInSeconds: 600, resendInSeconds: 30 })
+          : json({ error: { code: 'NOT_FOUND', message: 'No active account is registered with this mobile number. Contact your administrator.' } }, 404);
       }
       if (url === '/api/auth/otp/verify') {
         return body.otp === DEV_OTP
           ? json(verifyReply.body, verifyReply.status)
           : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect OTP. 4 attempt(s) left.' } }, 401);
       }
-      if (url === '/api/auth/password') {
-        if (body.mobile !== BU_MOBILE) {
-          return json({ error: { code: 'NOT_FOUND', message: 'No BU head account is registered for this mobile number.' } }, 404);
-        }
-        if (body.password !== BU_PASSWORD) {
-          return json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect password. 2 attempt(s) left before the account locks.' } }, 401);
-        }
-        return buMustChange ? json({ mustChangePassword: true, changeToken: 'change-1' }) : json(buSession);
-      }
-      if (url === '/api/auth/password/change') {
-        return body.changeToken === 'change-1' || body.changeToken === 'change-reset'
-          ? json(buSession)
-          : json({ error: { code: 'UNAUTHORIZED', message: 'This password-change link has expired. Sign in again.' } }, 401);
-      }
-      if (url === '/api/auth/password/forgot') {
-        return json({ sentTo: 'n***@wockhardt.com', expiresInSeconds: 600, resendInSeconds: 30, devOtp: BU_RESET_CODE });
-      }
-      if (url === '/api/auth/password/forgot/verify') {
-        return body.otp === BU_RESET_CODE
-          ? json({ changeToken: 'change-reset' })
-          : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect code. 4 attempt(s) left.' } }, 401);
-      }
-      if (url.includes('/effort/missed-doctors')) return json(missedFor(url));
+      if (url.includes('/samples/hospital-coverage.json')) return hospitalSample ? json(hospitalSample) : json({}, 404);
+      if (url.includes('/details/')) return json(detailFor(url));
       if (url.includes('/meta/version')) return json(version);
       if (url.includes('/meta/filters')) return json(filtersFor(url));
       if (url.includes('/dashboard/')) {
@@ -314,21 +345,14 @@ describe('sign-in', () => {
     expect(urls.slice(0, 2)).toEqual(['/api/auth/otp/request', '/api/auth/otp/verify']);
   });
 
-  it('shows the OTP on the login screen whenever the API returns it, and fills it on request', async () => {
+  it('says where the code was emailed, and shows no code on screen', async () => {
     signOut();
     renderApp('/login');
     await requestCode();
-    expect(screen.getByRole('status')).toHaveTextContent(`Testing mode — your OTP is ${DEV_OTP}`);
-    fireEvent.click(screen.getByRole('button', { name: 'Fill' }));
-    expect(screen.getByLabelText('Digit 6 of 6')).toHaveValue(DEV_OTP[5]);
-  });
-
-  it('shows no OTP when the API does not return one, as in production', async () => {
-    apiReturnsOtp = false;
-    signOut();
-    renderApp('/login');
-    await requestCode();
+    expect(screen.getByText(/We emailed you a 6-digit code/)).toBeInTheDocument();
+    expect(screen.getByText('Sent to a***@wockhardt.com')).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/BU head\?/)).not.toBeInTheDocument();
   });
 
   it('says so when the mobile is not registered', async () => {
@@ -336,7 +360,7 @@ describe('sign-in', () => {
     renderApp('/login');
     fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: '9876543210' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/not registered for the dashboard/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No active account is registered/i);
   });
 
   it('shows the API message for a wrong OTP and stays on the login page', async () => {
@@ -499,6 +523,26 @@ describe('Division performance tab', () => {
     for (const label of ['Division', 'Zonal', 'Regional', 'HQ', 'Credit note']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
+  });
+});
+
+describe('cached figures', () => {
+  it('opens on the fiscal year to date for the server’s open month, without a request on the placeholder', async () => {
+    version.openYrMn = 202610;
+    renderApp();
+    await screen.findByText('Effort Dashboard');
+    await waitFor(() => {
+      const tabCalls = vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/dashboard/'));
+      expect(tabCalls.length).toBeGreaterThan(0);
+      expect(tabCalls.every((u) => u.includes('from=202604') && u.includes('to=202610'))).toBe(true);
+    });
+  });
+
+  it('says when the figures were read, and when newer data is on its way', async () => {
+    tabPayload = tab({ meta: { ...tab().meta, cached: true, refreshing: true } });
+    renderApp();
+    expect(await screen.findByText(/Figures as of 21-Oct/)).toBeInTheDocument();
+    expect(screen.getByText(/newer data is being loaded/)).toBeInTheDocument();
   });
 });
 
@@ -731,18 +775,19 @@ describe('effort dashboard', () => {
     });
 
   it('opens the missed doctors from the right when Drs Missed is clicked', async () => {
-    missedCalls.length = 0;
+    detailCalls.length = 0;
     tabPayload = withMissed();
     renderApp();
 
-    const link = await screen.findByRole('button', { name: /list the 150 missed doctors/i });
-    fireEvent.click(link);
+    fireEvent.click(await screen.findByRole('button', { name: /list the 150 missed doctors/i }));
 
-    const drawer = await screen.findByRole('dialog', { name: /missed doctors/i });
+    const drawer = await screen.findByRole('dialog', { name: 'Doctors' });
     expect(await within(drawer).findByText('Jikku Jacob')).toBeInTheDocument();
     expect(within(drawer).getByText('1–100 of 150')).toBeInTheDocument();
-    expect(within(drawer).getAllByText('Vacant').length).toBeGreaterThan(0); // the vacant territory's TM
-    expect(missedCalls[0]!.searchParams.get('from')).toBe(String(tab().meta.from));
+    expect(within(drawer).getAllByText('Vacant').length).toBeGreaterThan(0);
+    expect(within(drawer).getByRole('button', { name: 'Missed' })).toHaveAttribute('aria-pressed', 'true');
+    expect(detailCalls[0]!.searchParams.get('status')).toBe('missed');
+    expect(detailCalls[0]!.searchParams.get('from')).toBe(String(tab().meta.from));
 
     // Next page.
     fireEvent.click(within(drawer).getByRole('button', { name: /next/i }));
@@ -751,25 +796,75 @@ describe('effort dashboard', () => {
     // A category narrows the list, back on page 1.
     fireEvent.click(within(drawer).getByRole('button', { name: 'A' }));
     expect(await within(drawer).findByText('1–50 of 50')).toBeInTheDocument();
-    expect(missedCalls.at(-1)!.searchParams.getAll('category')).toEqual(['A']);
+    expect(detailCalls.at(-1)!.searchParams.get('category')).toBe('A');
+
+    // The status chips switch to the doctors met.
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Met' }));
+    expect(await within(drawer).findByText(/of 17$/)).toBeInTheDocument(); // met, category A
 
     // Esc closes it.
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: /missed doctors/i })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Doctors' })).not.toBeInTheDocument());
   });
 
-  it('searches the missed doctors', async () => {
+  it('searches the list', async () => {
     tabPayload = withMissed();
     renderApp();
     fireEvent.click(await screen.findByRole('button', { name: /list the 150 missed doctors/i }));
-    const drawer = await screen.findByRole('dialog', { name: /missed doctors/i });
+    const drawer = await screen.findByRole('dialog', { name: 'Doctors' });
     await within(drawer).findByText('Jikku Jacob');
 
-    fireEvent.change(within(drawer).getByRole('searchbox', { name: /search missed doctors/i }), {
+    fireEvent.change(within(drawer).getByRole('searchbox', { name: /search doctors/i }), {
       target: { value: 'jikku' },
     });
     expect(await within(drawer).findByText('1–1 of 1')).toBeInTheDocument();
     expect(within(drawer).queryByText('Doctor 2')).not.toBeInTheDocument();
+  });
+
+  it('opens the doctors met from Drs Met, with the Met chip on', async () => {
+    detailCalls.length = 0;
+    tabPayload = withMissed();
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: /list the 17,531 doctors met/i }));
+    const drawer = await screen.findByRole('dialog', { name: 'Doctors' });
+    expect(await within(drawer).findByText('1–50 of 50')).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Met' })).toHaveAttribute('aria-pressed', 'true');
+    expect(detailCalls[0]!.searchParams.get('status')).toBe('met');
+  });
+
+  it('lists the leavers of a cadre from the attrition counts; a zero is not a link', async () => {
+    detailCalls.length = 0;
+    tabPayload = tab({
+      manpower: {
+        left: { tm: 2, rm: 1, zsm: 0 },
+        joined: { tm: 1, rm: 0, zsm: 0 },
+        leftByTenure: {
+          tm: { under6m: 1, m6to12: 1, over1y: 0 },
+          rm: { under6m: 0, m6to12: 0, over1y: 1 },
+          zsm: { under6m: 0, m6to12: 0, over1y: 0 },
+        },
+      },
+    });
+    renderApp();
+
+    expect(screen.queryByRole('button', { name: /list the zsms who left$/i })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /list the tms who left$/i }));
+
+    const drawer = await screen.findByRole('dialog', { name: 'Leavers' });
+    expect(await within(drawer).findByText('RAJESH THAKUR')).toBeInTheDocument();
+    expect(within(drawer).getByText('03-Sep-2026')).toBeInTheDocument();
+    expect(within(drawer).queryByText('A REGIONAL MANAGER')).not.toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'TM' })).toHaveAttribute('aria-pressed', 'true');
+    expect(detailCalls[0]!.searchParams.get('cadre')).toBe('TM');
+  });
+
+  it('opens the HQ headcount from Budget TM', async () => {
+    tabPayload = withMissed();
+    renderApp();
+    fireEvent.click((await screen.findAllByRole('button', { name: /headcount by hq/i }))[0]!);
+    const drawer = await screen.findByRole('dialog', { name: 'HQ headcount & PCPM' });
+    expect(await within(drawer).findByText('CHANDIGARH 2')).toBeInTheDocument();
+    expect(within(drawer).getByText('4.50')).toBeInTheDocument(); // PCPM in lakhs
   });
 
   it('keeps Drs Missed plain text when there are none', async () => {
@@ -825,6 +920,68 @@ describe('effort dashboard', () => {
     renderApp();
     // The monthly table and the Drs Met chart say why; the footer lists it.
     expect((await screen.findAllByText(reason)).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('hospital coverage & tier mix (RESEARCH)', () => {
+  const hospitals = {
+    total: { label: 'Total', count: 1607, covered: null, coveredPct: null, missed: null },
+    tiers: ([['Tier I', 149], ['Tier II', 406], ['Tier III', 224], ['Tier IV', 102]] as const).map(([label, n]) => ({
+      label, count: n, covered: null, coveredPct: null, missed: null,
+    })),
+    untiered: 726,
+    months: [],
+  };
+
+  it('shows the HML table by tier and the tier mix, and says why coverage is blank', async () => {
+    const reason = 'The hospital master list records no visits, and the effort data no hospital visits yet, so hospitals covered and missed are left blank.';
+    tabPayload = tab({ hospitals, meta: { ...tab().meta, unavailable: [{ key: 'hospitals.coverage', label: 'Hospitals covered and missed', reason }] } });
+    renderApp();
+
+    expect(await screen.findByText('Hospital Coverage & Tier Mix')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: /hospitals in the master list/i });
+    const row = (label: string) => [...within(table).getByText(label).closest('tr')!.querySelectorAll('td')].map((c) => c.textContent);
+    expect(row('Count of Hosp in HML')).toEqual(['1,607', '149', '406', '224', '102']);
+    expect(row('Covered %')).toEqual(['—', '—', '—', '—', '—']);
+    expect(screen.getByText(/726 of the 1,607 hospitals have no tier/)).toBeInTheDocument();
+    expect(screen.getByText('HML mix by Tier')).toBeInTheDocument();
+    expect(screen.getByText(/coverage by tier cannot be shown/)).toBeInTheDocument();
+    expect(screen.getAllByText(reason).length).toBeGreaterThan(0);
+  });
+
+  it('opens the hospitals of a tier from its count', async () => {
+    detailCalls.length = 0;
+    tabPayload = tab({ hospitals });
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: 'List the Tier I hospitals' }));
+    const drawer = await screen.findByRole('dialog', { name: 'Hospital master list' });
+    expect(await within(drawer).findByText('FORTIS HOSPITAL')).toBeInTheDocument();
+    expect(within(drawer).queryByText('ARKAN HOSPITAL')).not.toBeInTheDocument();
+    expect(detailCalls[0]!.searchParams.get('tier')).toBe('Tier 1');
+  });
+
+  it('draws the sample file in both coverage charts, marked as a sample, while visits are not recorded', async () => {
+    hospitalSample = {
+      months: [{ month: 'Aug-26', covered: 1219, missed: 229 }, { month: 'Sep-26', covered: 1262, missed: 187 }],
+      tiers: [{ tier: 'Tier I', coveragePct: 90 }, { tier: 'Tier II', coveragePct: 85 }, { tier: 'Tier III', coveragePct: 80 }, { tier: 'Tier IV', coveragePct: 70 }],
+    };
+    tabPayload = tab({ hospitals });
+    renderApp();
+
+    expect(await screen.findAllByText(/Sample data for illustration/)).toHaveLength(2);
+    expect(screen.queryByText(/coverage by tier cannot be shown/)).not.toBeInTheDocument();
+    // The tier chart's table: 90% of the real 149 Tier I hospitals.
+    const tierChart = screen.getByText('Tier-wise Covered vs Missed').closest('section')!;
+    fireEvent.click(within(tierChart).getByRole('button', { name: /table/i }));
+    const tierRow = within(within(tierChart).getByRole('table')).getByText('Tier I').closest('tr')!;
+    expect([...tierRow.querySelectorAll('td')].map((c) => c.textContent)).toEqual(['134', '15']);
+  });
+
+  it('is not shown outside RESEARCH', async () => {
+    tabPayload = tab({ hospitals: null });
+    renderApp();
+    await screen.findByText('Effort Dashboard');
+    expect(screen.queryByText('Hospital Coverage & Tier Mix')).not.toBeInTheDocument();
   });
 });
 
@@ -959,79 +1116,3 @@ describe('filter cascade', () => {
   });
 });
 
-describe('BU head sign-in', () => {
-  const signOut = () => useAuthStore.setState({ token: null, user: null });
-  const typeInto = (label: RegExp | string, value: string) =>
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
-
-  async function signInWith(password: string) {
-    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: BU_MOBILE } });
-    typeInto(/^password$/i, password);
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-  }
-
-  it('is reached from the field-force sign-in page', async () => {
-    signOut();
-    renderApp('/login');
-    fireEvent.click(await screen.findByRole('link', { name: /sign in with your password/i }));
-    expect(await screen.findByRole('heading', { name: 'BU head sign in' })).toBeInTheDocument();
-  });
-
-  it('makes a first-time BU head set a password, then opens their division', async () => {
-    signOut();
-    renderApp('/login/bu-head');
-    await signInWith(BU_PASSWORD);
-
-    expect(await screen.findByRole('heading', { name: 'Set a new password' })).toBeInTheDocument();
-    // Guided by the rule list, and checked before it is sent.
-    typeInto(/^new password$/i, 'short');
-    typeInto(/confirm new password/i, 'short');
-    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/at least 8 characters/i);
-
-    typeInto(/^new password$/i, 'Mine@2026x');
-    typeInto(/confirm new password/i, 'Mine@2026y');
-    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/do not match/i);
-
-    typeInto(/confirm new password/i, 'Mine@2026x');
-    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
-    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
-    expect(useAuthStore.getState().token).toBe('bu-token');
-  });
-
-  it('opens the dashboard straight away once the password is set', async () => {
-    buMustChange = false;
-    signOut();
-    renderApp('/login/bu-head');
-    await signInWith(BU_PASSWORD);
-    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
-  });
-
-  it('shows the API message for a wrong password', async () => {
-    signOut();
-    renderApp('/login/bu-head');
-    await signInWith('Wrong#pass1');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect password. 2 attempt(s) left before the account locks.');
-    expect(useAuthStore.getState().token).toBeNull();
-  });
-
-  it('resets a forgotten password with a code', async () => {
-    signOut();
-    renderApp('/login/bu-head');
-    fireEvent.click(await screen.findByRole('button', { name: 'Forgot password?' }));
-    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: BU_MOBILE } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send code' }));
-
-    expect(await screen.findByText(/sent a 6-digit code to n\*\*\*@wockhardt.com/)).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(`Testing mode — your code is ${BU_RESET_CODE}`);
-    fireEvent.click(screen.getByRole('button', { name: 'Fill' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Verify code' }));
-
-    expect(await screen.findByRole('heading', { name: 'Set a new password' })).toBeInTheDocument();
-    typeInto(/^new password$/i, 'Fresh#2026');
-    typeInto(/confirm new password/i, 'Fresh#2026');
-    fireEvent.click(screen.getByRole('button', { name: /set password/i }));
-    expect(await screen.findByText(/BU Head · Division 85/)).toBeInTheDocument();
-  });
-});

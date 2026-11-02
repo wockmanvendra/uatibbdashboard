@@ -12,15 +12,7 @@ import { getDataVersion, resetDataVersionCache } from '../services/versionServic
 import { flushPrefix, versionKey } from '../cache/key.js';
 import { badRequest } from '../lib/errors.js';
 import { TABS } from '../tabs/registry.js';
-
-const list = z
-  .union([z.string(), z.array(z.string())])
-  .optional()
-  .transform((v) => {
-    if (v === undefined) return [];
-    const raw = Array.isArray(v) ? v : [v];
-    return [...new Set(raw.flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean))];
-  });
+import { divisionList, list } from './params.js';
 
 export const metaRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/meta/version', async (_req, reply) => {
@@ -37,7 +29,7 @@ export const metaRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/api/meta/filters', async (req) => {
-    const schema = z.object({ division: list, zone: list, region: list });
+    const schema = z.object({ division: divisionList, zone: list, region: list });
     const parsed = schema.safeParse(req.query);
     if (!parsed.success) throw badRequest('Invalid filter selection.');
     return getFilterOptions(parsed.data, req.scope);

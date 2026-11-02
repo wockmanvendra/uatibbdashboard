@@ -63,3 +63,14 @@ export function fyLabel(yrMn: number): string {
 }
 
 export const isClosed = (yrMn: number, openYrMn: number) => yrMn < openYrMn;
+
+/**
+ * The period a dashboard opens on: the fiscal year to date — from the April
+ * that starts the open month's fiscal year, to the open month. The API's cache
+ * warmer pre-builds exactly this period, so it must match the web's default.
+ */
+export function defaultPeriod(openYrMn: number): { from: number; to: number } {
+  const { year, month } = toParts(openYrMn);
+  const fyYear = month >= FY_START_MONTH ? year : year - 1;
+  return { from: fromParts(fyYear, FY_START_MONTH), to: openYrMn };
+}

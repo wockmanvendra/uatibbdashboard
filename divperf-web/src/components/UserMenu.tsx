@@ -14,6 +14,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
   zsm: 'Zonal Sales Manager',
   nsm: 'National Sales Manager',
   'bu-head': 'BU Head',
+  admin: 'Admin',
 };
 
 /** `dark` sits on the blue title bar; `light` on a white surface. */

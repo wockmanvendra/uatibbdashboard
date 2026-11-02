@@ -5,19 +5,16 @@
 export interface CacheClient {
   get<T>(key: string): Promise<T | null>;
   set<T>(key: string, value: T, ttlSeconds: number): Promise<void>;
+  /** Sets only when the key is absent; true when it was set. A lock. */
+  setIfAbsent<T>(key: string, value: T, ttlSeconds: number): Promise<boolean>;
+  /** Every live key starting with `prefix`. */
+  keysByPrefix(prefix: string): Promise<string[]>;
   delByPrefix(prefix: string): Promise<void>;
   close(): Promise<void>;
 }
 
-/** Closed months are immutable, so they cache indefinitely. (I7) */
-export const CLOSED_MONTH_TTL = 60 * 60 * 24 * 7; // 7 days
-export const OPEN_MONTH_TTL = 60 * 5; // 5 minutes
-
 /**
- * TTL for a response whose range ends at `toYrMn`.
- * A range ending in a closed month cannot change; anything touching the open
- * month needs freshness.
+ * A cached view's lifetime. Views are kept until the data changes — the
+ * version check replaces them — so this only clears out views nobody opens.
  */
-export function ttlFor(toYrMn: number, openYrMn: number): number {
-  return toYrMn < openYrMn ? CLOSED_MONTH_TTL : OPEN_MONTH_TTL;
-}
+export const VIEW_TTL = 60 * 60 * 24 * 7; // 7 days

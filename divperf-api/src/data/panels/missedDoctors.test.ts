@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeScope } from '../../plugins/scope.js';
 import type { PanelFilters } from '../queryBuilder.js';
-import { categoryOrder, fetchMissedDoctors, fetchMissedSummary } from './missedDoctors.js';
+import { categoryOrder, fetchMissedSummary } from './missedDoctors.js';
 import { buildLiveTab } from '../../services/liveData.js';
 import { getTab } from '../../tabs/registry.js';
 import { fakeDb } from '../../test/fakeDb.js';
@@ -43,43 +43,6 @@ describe('missed doctor summary', () => {
 
   it('orders categories A, B, C, then the rest by name', () => {
     expect(['New', 'C', 'A', 'CORE - B', 'B'].sort(categoryOrder)).toEqual(['A', 'B', 'C', 'CORE - B', 'New']);
-  });
-});
-
-describe('missed doctor list', () => {
-  const row = {
-    rn: 101, total: 2085, ym: '202608', zone: 'Chennai', region: 'Cochin', hq: 'Kannur', hq_code: 'WTKANN',
-    tm_code: '832406', tm_name: 'MUHAMMED SAFVAN VP', doctor_code: 'D1', doctor_name: 'Abhilash C C',
-    speciality: 'Surgeon', category: 'B', rm_visits: '1', zsm_visits: 0,
-  };
-
-  it('pages by row number and returns the total from the same pass', async () => {
-    const { db, calls } = fakeDb([[/ROW_NUMBER/, [row]]]);
-    const res = await fetchMissedDoctors(db, NSM, F(), { page: 2, pageSize: 100 });
-
-    expect(res).toMatchObject({ total: 2085, page: 2, pageSize: 100 });
-    expect(res.rows[0]).toEqual({
-      month: 202608, zone: 'Chennai', region: 'Cochin', hq: 'Kannur', hqCode: 'WTKANN',
-      tmName: 'MUHAMMED SAFVAN VP', tmCode: '832406', doctorCode: 'D1', doctorName: 'Abhilash C C',
-      speciality: 'Surgeon', category: 'B', rmVisits: 1, zsmVisits: 0,
-    });
-    expect(calls[0]!.params).toMatchObject({ rFrom: 101, rTo: 200 });
-    expect(calls[0]!.sql).toContain('COUNT_BIG(*) OVER () AS total');
-  });
-
-  it('binds the search term, matching its wildcards literally, and the categories', async () => {
-    const { db, calls } = fakeDb([[/ROW_NUMBER/, []]]);
-    const res = await fetchMissedDoctors(db, NSM, F(), {
-      page: 1, pageSize: 50, search: ' 50%_off ', categories: ['A', 'Unclassified'],
-    });
-
-    expect(res.total).toBe(0);
-    const { sql, params } = calls[0]!;
-    expect(params.q).toBe('%50[%][_]off%');
-    expect(sql).toContain('vs.doctor_name LIKE @q');
-    expect(sql).not.toContain('50%');
-    expect(params.k0).toBe('A');
-    expect(sql).toContain('vs.category IN (@k0) OR vs.category IS NULL');
   });
 });
 

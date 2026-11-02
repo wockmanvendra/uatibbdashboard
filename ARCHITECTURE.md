@@ -1105,6 +1105,18 @@ NSM's division at division level. The session token carries only the employee
 code; the person and scope are re-read from the view on every request (cached
 one minute). Rules 2–6 hold unchanged.
 
+**Superseded (2026-10-30): the Central User Service.** Sign-in moved to the
+shared Central User Service (users.wockregenerative.com), and
+`sales_dash_user_db` is no longer used. The service holds every user (field
+force for all 8 sales divisions, BU heads, admins), emails the OTP and issues an
+RS256 token for this app; the API checks it with the service's public key and
+confirms the account is active (cached one minute). Scope is worked out by the
+same rules from the service's field hierarchy (`src/users/sessionUser.ts`):
+HQ / region / zone SAP codes for TM / RM / ZSM, the division for NSM, BU head
+and admin, and every division for the service's admins and
+`ALL_DIVISION_MOBILES`. Rules 2–6 still hold: the scope never comes from the
+browser.
+
 **The scope also carries the user's division (2026-09-30).** HQ, region and zone
 codes are not unique across divisions — 59 of 540 HQ codes, 2 region codes and
 1 zone code recur in another division — so a node set alone would let a TM see a

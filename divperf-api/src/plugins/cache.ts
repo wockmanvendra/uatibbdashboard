@@ -28,7 +28,7 @@ const plugin: FastifyPluginAsync = async (app) => {
     client = new RedisCache(config.REDIS_URL!);
     app.log.info('cache driver: redis');
   } else {
-    client = new MemoryCache();
+    client = new MemoryCache(config.MEMORY_CACHE_MAX);
     app.log.warn(
       'cache driver: memory — correct for a single instance only. ' +
         'Switch to redis before running more than one instance (I10).',

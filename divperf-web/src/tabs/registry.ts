@@ -23,28 +23,28 @@ export const TABS: TabConfig[] = [
     path: 'division',
     label: 'Division',
     grain: 'division',
-    panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'keyBrands', 'creditNote', 'manpower', 'rx', 'effort', 'hospitals', 'trends', 'mix'],
   },
   {
     id: 'zone-performance',
     path: 'zone',
     label: 'Zonal',
     grain: 'zone',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'hospitals', 'trends', 'mix'],
   },
   {
     id: 'region-performance',
     path: 'region',
     label: 'Regional',
     grain: 'region',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'hospitals', 'trends', 'mix'],
   },
   {
     id: 'hq-performance',
     path: 'hq',
     label: 'HQ',
     grain: 'hq',
-    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'trends', 'mix'],
+    panels: [...KPI_PANELS, 'geoTable', 'creditNote', 'manpower', 'rx', 'effort', 'hospitals', 'trends', 'mix'],
   },
   {
     id: 'credit-note',
@@ -52,6 +52,13 @@ export const TABS: TabConfig[] = [
     label: 'Credit note',
     grain: 'division',
     panels: ['creditNote', 'cnDetail', 'trends'],
+  },
+  {
+    id: 'stockist-performance',
+    path: 'stockist',
+    label: 'Stockist details',
+    grain: 'division',
+    panels: ['stockistTable'],
   },
 ];
 

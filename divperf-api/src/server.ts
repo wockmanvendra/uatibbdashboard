@@ -3,7 +3,6 @@ import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { config } from './config.js';
-import { closeUserDb } from './users/db.js';
 import { cachePlugin } from './plugins/cache.js';
 import { authPlugin } from './plugins/auth.js';
 import { scopePlugin } from './plugins/scope.js';
@@ -11,7 +10,8 @@ import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { metaRoutes } from './routes/meta.js';
 import { dashboardRoutes } from './routes/dashboard.js';
-import { effortRoutes } from './routes/effort.js';
+import { detailRoutes } from './routes/details.js';
+import { startCacheWarmer } from './services/cacheWarmer.js';
 import { AppError, serialiseError, tooManyRequests } from './lib/errors.js';
 
 export async function buildServer() {
@@ -68,7 +68,6 @@ export async function buildServer() {
       tooManyRequests(`Too many attempts. Wait ${Math.ceil(ctx.ttl / 60_000)} minute(s) and try again.`),
   });
 
-  app.addHook('onClose', closeUserDb);
 
   await app.register(cachePlugin);
   // Auth before scope: onRequest hooks run in registration order.
@@ -99,7 +98,7 @@ export async function buildServer() {
   await app.register(authRoutes);
   await app.register(metaRoutes);
   await app.register(dashboardRoutes);
-  await app.register(effortRoutes);
+  await app.register(detailRoutes);
 
   return app;
 }
@@ -119,9 +118,14 @@ export async function main() {
     process.exit(1);
   }
 
+  // Rebuilds cached views whenever the source data changes. Started here, not
+  // in buildServer(), so tests never run it.
+  const stopWarmer = startCacheWarmer(app);
+
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, () => {
       app.log.info(`${sig} received, closing`);
+      stopWarmer();
       void app.close().then(() => process.exit(0));
     });
   }

@@ -12,6 +12,21 @@ const bool = (def: boolean) =>
     .optional()
     .transform((v) => (v === undefined || v === '' ? def : v.toLowerCase() === 'true'));
 
+/** "a:b;c:d" into { a: b, c: d }: each key a code, each value matching `value`. */
+const pairs = (name: string, value: RegExp) =>
+  z.string().transform((raw, ctx) => {
+    const map: Record<string, string> = {};
+    for (const part of raw.split(';').map((p) => p.trim()).filter(Boolean)) {
+      const [k, v] = part.split(':').map((p) => p.trim());
+      if (!k || !v || !/^[A-Za-z0-9]+$/.test(k) || !value.test(v)) {
+        ctx.addIssue({ code: 'custom', message: `${name}: bad entry "${part}"` });
+        return z.NEVER;
+      }
+      map[k] = v;
+    }
+    return map;
+  });
+
 const schema = z
   .object({
     PORT: z.coerce.number().int().positive().default(8787),
@@ -109,25 +124,39 @@ const schema = z
     /**
      * The effort data's division names, by division code, as
      * "code:NAME;code:NAME". The effort data names a division but carries no
-     * code. A name listed for more than one code (RESEARCH covers 02 and 84)
+     * code. A name listed for more than one code
      * is split by its territories' codes; a division without an entry shows
      * effort as unavailable rather than as zero.
      */
-    EFFORT_DIVISIONS: z
+    EFFORT_DIVISIONS: pairs('EFFORT_DIVISIONS', /\S/)
+      .default('85:BIOSCIENCES;A5:RESPIRATORY;78:BIOPHARMA;A7:SPECIALITY;A8:AESTHETICS;83:PHARMA;02:RESEARCH'),
+
+    /**
+     * Division codes that are another division's code, as "alias:code;…".
+     * RESEARCH is 02 in the sales data but 84 in the visits, hospitals, people
+     * and user service (and both in the credit notes): every source's 84 is
+     * read as 02, so the division is one everywhere — filters, scope, totals.
+     */
+    DIVISION_ALIASES: pairs('DIVISION_ALIASES', /^[A-Za-z0-9]+$/).default('84:02'),
+    /**
+     * Division display names that override the sales data's Div_Name, as
+     * "code:NAME;…" (letters, digits, spaces, & . -).
+     */
+    DIVISION_NAMES: pairs('DIVISION_NAMES', /^[A-Za-z0-9 &.-]+$/).default('02:RESEARCH'),
+
+    /**
+     * The hospital master list (HML): one row per hospital, with its HQ and
+     * tier. Interpolated like DASHBOARD_TABLE.
+     */
+    HOSPITAL_TABLE: z
       .string()
-      .default('85:BIOSCIENCES;A5:RESPIRATORY;78:BIOPHARMA;A7:SPECIALITY;A8:AESTHETICS;83:PHARMA;02:RESEARCH;84:RESEARCH')
-      .transform((raw, ctx) => {
-        const map: Record<string, string> = {};
-        for (const part of raw.split(';').map((p) => p.trim()).filter(Boolean)) {
-          const [division, name] = part.split(':').map((p) => p.trim());
-          if (!division || !name || !/^[A-Za-z0-9]+$/.test(division)) {
-            ctx.addIssue({ code: 'custom', message: `EFFORT_DIVISIONS: bad entry "${part}"` });
-            return z.NEVER;
-          }
-          map[division] = name;
-        }
-        return map;
-      }),
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$/, 'HOSPITAL_TABLE must look like schema.table')
+      .default('Infinity.Hospital_List'),
+    /** Divisions the hospital section is shown for (comma-separated codes): RESEARCH. */
+    HOSPITAL_DIVISIONS: z
+      .string()
+      .default('02')
+      .transform((raw) => raw.split(',').map((d) => d.trim()).filter(Boolean)),
 
     /**
      * One row per doctor, territory and month, with the TM's, RM's and ZSM's
@@ -153,41 +182,47 @@ const schema = z
     REDIS_URL: z.string().optional(),
     /** none: no response cache — every request reads the warehouse. */
     CACHE_DRIVER: z.enum(['memory', 'redis', 'none']).default('memory'),
+    /** Most views the memory cache holds (each a few hundred KB at most). */
+    MEMORY_CACHE_MAX: z.coerce.number().int().min(100).max(100_000).default(1000),
+
+    /**
+     * How often to check whether any source has changed (the data
+     * fingerprint). A change rebuilds the cached views in the background;
+     * until then users get the previous copy at once.
+     */
+    DATA_CHECK_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
+    /** Views rebuilt at once after a change — leaves Synapse room for users. */
+    WARM_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(1),
+    /** Most recently used views rebuilt after a change, besides the senior defaults. */
+    WARM_MAX_VIEWS: z.coerce.number().int().min(0).max(5000).default(300),
+    /** A view counts as recently used for this many hours. */
+    WARM_HOT_HOURS: z.coerce.number().int().min(1).max(168).default(24),
 
     AZURE_TENANT_ID: z.string().optional(),
     AZURE_API_AUDIENCE: z.string().optional(),
 
-    /** Signs session tokens; changing it signs everyone out. Required in production. */
-    JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').optional(),
-    SESSION_MAX_HOURS: z.coerce.number().positive().default(8),
-
-    /** The sign-in database (db/schema.sql): who may sign in and what they may see. */
-    USER_DATABASE_URL: z.string().url(),
-    // The Infinity field-structure API, as the D2D portal calls it. The header
-    // is sent only when both are set.
-    INFINITY_REPORT_BASE_URL: z.string().url().default('https://infinityplus.wockhardt.com/plus/report'),
-    INFINITY_API_HEADER_NAME: z.string().optional(),
-    INFINITY_API_TOKEN: z.string().optional(),
-    OTP_EXPIRY_MINUTES: z.coerce.number().int().min(1).max(30).default(10),
+    /**
+     * Sign-in: the Central User Service (users.wockregenerative.com). It holds
+     * every user, emails the OTP and issues the session token (RS256), which
+     * this API checks with the service's public key.
+     */
+    CENTRAL_USER_SERVICE_URL: z.string().url().transform((u) => u.replace(/\/+$/, '')),
+    /** The token issuer, when the service is reached at another address. Default: the URL. */
+    CENTRAL_ISSUER: z.string().url().optional(),
+    /** This app's id in the service: the token audience, named in the OTP email. */
+    CENTRAL_CLIENT_ID: z.string().min(1).default('ibb-insights'),
+    /** This app's API key in the service (OTP calls, account checks, the hierarchy). */
+    CENTRAL_API_KEY: z.string().min(1, 'CENTRAL_API_KEY is required: register the app in the Central User Service'),
+    /**
+     * Mobiles that see every division, besides the service's own admins:
+     * "9876543210,9123456780".
+     */
+    ALL_DIVISION_MOBILES: z
+      .string()
+      .default('')
+      .transform((raw) => new Set(raw.split(',').map((m) => m.trim()).filter(Boolean))),
     /** Sign-in requests per IP per 15 minutes, as in the D2D portal. */
     AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(20),
-
-    // OTP by SMS (SMSStriker, as the D2D portal uses). The text must match the
-    // DLT-registered template exactly, with {otp} where the code goes.
-    SMS_URL: z.string().optional(),
-    SMS_USERNAME: z.string().optional(),
-    SMS_PASSWORD: z.string().optional(),
-    SMS_FROM: z.string().optional(),
-    SMS_TEMPLATE_ID: z.string().optional(),
-    SMS_OTP_TEXT: z.string().optional(),
-
-    // OTP by email. SMTP_USER is optional: an internal relay may not need auth.
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.coerce.number().int().positive().default(587),
-    SMTP_USER: z.string().optional(),
-    SMTP_PASSWORD: z.string().optional(),
-    SMTP_INSECURE_TLS: bool(false),
-    EMAIL_FROM: z.string().optional(),
 
     /**
      * Phase 1: serve the hardcoded contract mock. The serving database does not
@@ -207,30 +242,6 @@ const schema = z
         }
       }
     }
-    if (v.NODE_ENV === 'production' && !v.JWT_SECRET) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['JWT_SECRET'],
-        message: 'JWT_SECRET is required in production',
-      });
-    }
-    if (v.SMS_OTP_TEXT !== undefined && !v.SMS_OTP_TEXT.includes('{otp}')) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['SMS_OTP_TEXT'],
-        message: 'SMS_OTP_TEXT must contain {otp}',
-      });
-    }
-    // Outside production the code is shown on the login screen instead.
-    const smsReady = !!(v.SMS_URL && v.SMS_USERNAME && v.SMS_FROM && v.SMS_TEMPLATE_ID && v.SMS_OTP_TEXT);
-    const emailReady = !!(v.SMTP_HOST && v.EMAIL_FROM);
-    if (v.NODE_ENV === 'production' && !smsReady && !emailReady) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['SMS_URL'],
-        message: 'Production needs a way to send OTPs: configure SMS_* or SMTP_HOST + EMAIL_FROM',
-      });
-    }
     if (v.CACHE_DRIVER === 'redis' && !v.REDIS_URL) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -249,13 +260,21 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-// Outside production a fixed secret keeps sessions valid across `tsx watch`
-// restarts. Production refuses to start without its own (see superRefine).
-const DEV_JWT_SECRET = 'divperf-development-only-secret-not-for-production';
+/** A division code as the dashboard knows it: an alias (DIVISION_ALIASES, RESEARCH's 84) becomes its division (02). */
+export const canonicalDivisionCode = (d: string) => parsed.data.DIVISION_ALIASES[d] ?? d;
+
+/** The effort names by dashboard division; an alias's entry (an older .env's 84) counts for its division. */
+const effortDivisions: Record<string, string> = {};
+for (const [d, name] of Object.entries(parsed.data.EFFORT_DIVISIONS)) {
+  const division = canonicalDivisionCode(d);
+  if (d === division || !(division in effortDivisions)) effortDivisions[division] = name;
+}
 
 export const config = Object.freeze({
   ...parsed.data,
-  JWT_SECRET: parsed.data.JWT_SECRET ?? DEV_JWT_SECRET,
+  CENTRAL_ISSUER: (parsed.data.CENTRAL_ISSUER ?? parsed.data.CENTRAL_USER_SERVICE_URL).replace(/\/+$/, ''),
+  EFFORT_DIVISIONS: effortDivisions,
+  HOSPITAL_DIVISIONS: [...new Set(parsed.data.HOSPITAL_DIVISIONS.map(canonicalDivisionCode))],
 });
 export type Config = typeof config;
 

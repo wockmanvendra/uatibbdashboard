@@ -10,13 +10,12 @@
 //   ibb-insights-web.tar.gz, ibb-insights-api.tar.gz   the same, for scp
 //   DEPLOYMENT_UAT.md          the guide (copied from deploy-uat-guide.md)
 //
-// The API .env is made from divperf-api/.env with the UAT settings below. No
-// secret is printed. A new JWT_SECRET is generated on the first package only and
-// reused after that (deploy/uat/.jwt-secret), so redeploying does not sign
-// everyone out.
+// The API .env is made from divperf-api/.env with the UAT settings below; the
+// retired sign-in settings (user database, session secret, SMS/SMTP, Infinity)
+// are left out. No secret is printed. Sign-in is the Central User Service:
+// CENTRAL_API_KEY comes from divperf-api/.env, or is set on the server.
 import { execSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = import.meta.dirname;
@@ -29,31 +28,30 @@ const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
 const UAT = {
   PORT: '8787',
   HOST: '127.0.0.1',
-  // No SMS or SMTP is configured, and production refuses to start without one:
-  // UAT shows sign-in codes on screen, as the test server does.
-  NODE_ENV: 'development',
+  NODE_ENV: 'production',
   DATA_SOURCE: 'synapse-direct',
   USE_MOCK_DATA: 'false',
-  CACHE_DRIVER: 'none',
+  // Views are cached in the API process and rebuilt when the data changes.
+  CACHE_DRIVER: 'memory',
   CORS_ORIGIN: 'https://uatIbbInsights.wockhardt.com,http://uatIbbInsights.wockhardt.com',
   LOG_LEVEL: 'info',
+  CENTRAL_USER_SERVICE_URL: 'https://users.wockregenerative.com',
+  CENTRAL_CLIENT_ID: 'ibb-insights',
 };
+
+/** Settings of the retired sign-in (sales_dash_user_db): not carried to UAT. */
+const RETIRED = /^(USER_DATABASE_URL|JWT_SECRET|SESSION_MAX_HOURS|OTP_EXPIRY_MINUTES|SMS_.*|SMTP_.*|EMAIL_FROM|INFINITY_.*)$/;
 
 console.log('1/6 Building the API and the frontend...');
 run('npm run build --silent', join(ROOT, 'divperf-api'));
 run('npm run build --silent', join(ROOT, 'divperf-web'));
 
 console.log('2/6 Fresh output folder...');
-const secretFile = join(OUT, '.jwt-secret');
-const jwtSecret = existsSync(secretFile)
-  ? readFileSync(secretFile, 'utf8').trim()
-  : randomBytes(48).toString('hex');
 // Empty the folder rather than delete it: Windows refuses to delete a folder
 // that a shell or editor has open.
 mkdirSync(OUT, { recursive: true });
 for (const n of readdirSync(OUT)) rmSync(join(OUT, n), { recursive: true, force: true });
 mkdirSync(join(OUT, 'apache'), { recursive: true });
-writeFileSync(secretFile, jwtSecret);
 
 console.log('3/6 Frontend...');
 // web.config is IIS-only; Apache gets its own site file.
@@ -63,28 +61,26 @@ cpSync(join(ROOT, 'divperf-web', 'dist'), WEB, {
 });
 
 console.log('4/6 API...');
-mkdirSync(join(API, 'dist', 'tools'), { recursive: true });
 cpSync(join(ROOT, 'divperf-api', 'dist', 'src'), join(API, 'dist', 'src'), { recursive: true });
-// The BU-head account tool, for creating password users on the server.
-for (const f of ['accounts.js', 'accounts.js.map']) {
-  cpSync(join(ROOT, 'divperf-api', 'dist', 'tools', f), join(API, 'dist', 'tools', f));
-}
 for (const f of ['package.json', 'package-lock.json']) {
   cpSync(join(ROOT, 'divperf-api', f), join(API, f));
 }
 
-// .env: every key from divperf-api/.env, UAT overrides, a UAT session secret.
+// .env: every current key from divperf-api/.env, with the UAT overrides.
 // Written without inline comments, and with values quoted where they hold a
 // "#" or a space, so any Node 20.6+ --env-file parser reads them the same.
 const env = {};
 for (const line of readFileSync(join(ROOT, 'divperf-api', '.env'), 'utf8').split(/\r?\n/)) {
   const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
-  if (!m) continue;
+  if (!m || RETIRED.test(m[1])) continue;
   let v = m[2];
   if (!/^["'`]/.test(v)) v = v.replace(/\s+#.*$/, ''); // drop an inline comment
   env[m[1]] = v.replace(/^(["'`])(.*)\1$/, '$2');
 }
-Object.assign(env, UAT, { JWT_SECRET: jwtSecret });
+Object.assign(env, UAT);
+env.CENTRAL_API_KEY ??= '';
+env.ALL_DIVISION_MOBILES ??= '';
+if (!env.CENTRAL_API_KEY) console.warn('CENTRAL_API_KEY is empty: set it in the server .env before starting the API.');
 const quote = (v) => (/[#\s"'`]/.test(v) ? (v.includes("'") ? `"${v}"` : `'${v}'`) : v);
 writeFileSync(
   join(API, '.env'),

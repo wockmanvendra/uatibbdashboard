@@ -1,22 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../server.js';
-import type { ApiError, FiltersResponse, MissedDoctorsResponse, TabResponse } from '../types/api.js';
+import { installFakeCentral, MOBILE, tokenFor } from '../test/central.js';
+import type { ApiError, FiltersResponse, DetailListResponse, TabResponse } from '../types/api.js';
 
-// These tests are about the data, not access: the session is an all-divisions user.
-vi.mock('../users/repo.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../users/repo.js')>()),
-  findUserByEmpcode: async () => ({
-    id: 'ALL',
-    usertype: 'nsm',
-    name: 'Test',
-    mobileno: '9000000009',
-    email: null,
-    scopeLevel: 'ALL',
-    scopeNodes: [],
-    divisions: [],
-  }),
-}));
+// These tests are about the data, not access: the session is an all-divisions
+// user (a mobile in ALL_DIVISION_MOBILES) of the stand-in Central User Service.
 
 let app: FastifyInstance;
 let token: string;
@@ -24,7 +13,7 @@ let token: string;
 beforeAll(async () => {
   app = await buildServer();
   await app.ready();
-  token = app.jwt.sign({ sub: 'ALL' });
+  token = tokenFor(installFakeCentral().user(MOBILE.ALL));
 });
 afterAll(async () => {
   await app.close();
@@ -39,7 +28,7 @@ describe('GET /api/dashboard/:tab', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<TabResponse>();
     expect(Object.keys(body).sort()).toEqual(
-      ['creditNote', 'effort', 'inventory', 'keyBrands', 'manpower', 'meta', 'mix', 'pcpm', 'primary', 'rcpa', 'rx', 'secondary', 'trends'].sort(),
+      ['creditNote', 'effort', 'hospitals', 'inventory', 'keyBrands', 'manpower', 'meta', 'mix', 'pcpm', 'primary', 'rcpa', 'rx', 'secondary', 'trends'].sort(),
     );
   });
 
@@ -177,29 +166,41 @@ describe('health', () => {
   });
 });
 
-describe('GET /api/effort/missed-doctors', () => {
-  it('returns a page of missed doctors with the total', async () => {
-    const res = await get('/api/effort/missed-doctors?from=202608&to=202609&page=1&pageSize=10');
+describe('GET /api/details/:list', () => {
+  it('returns a page of a list with its columns, facets and total', async () => {
+    const res = await get('/api/details/doctors?from=202608&to=202609&page=1&pageSize=10');
     expect(res.statusCode).toBe(200);
-    const body = res.json<MissedDoctorsResponse>();
+    const body = res.json<DetailListResponse>();
+    expect(body.title).toBe('Doctors');
     expect(body.total).toBe(48); // the mock: 24 a month
     expect(body.rows).toHaveLength(10);
-    expect(body.rows[0]).toHaveProperty('doctorName');
+    expect(body.columns.map((c) => c.key)).toContain('doctor');
+    expect(body.facets.map((f) => f.key)).toEqual(['status', 'category']);
   });
 
-  it('filters by category and search', async () => {
-    const body = (await get('/api/effort/missed-doctors?from=202608&to=202608&category=A&search=doctor 1')).json<MissedDoctorsResponse>();
+  it('serves every list', async () => {
+    for (const list of ['leavers', 'joiners', 'tm-effort', 'hq-headcount']) {
+      const res = await get(`/api/details/${list}?from=202608&to=202608`);
+      expect(res.statusCode, list).toBe(200);
+      expect(res.json<DetailListResponse>().rows.length, list).toBeGreaterThan(0);
+    }
+  });
+
+  it('filters by a facet and the search', async () => {
+    const body = (await get('/api/details/doctors?from=202608&to=202608&category=A')).json<DetailListResponse>();
     expect(body.rows.every((r) => r.category === 'A')).toBe(true);
-    expect(body.rows.every((r) => r.doctorName!.toLowerCase().includes('doctor 1'))).toBe(true);
+    expect(body.total).toBe(6);
   });
 
-  it('rejects a bad period and an oversized page', async () => {
-    expect((await get('/api/effort/missed-doctors?from=202609&to=202608')).statusCode).toBe(400);
-    expect((await get('/api/effort/missed-doctors?from=202608&to=202608&pageSize=5000')).statusCode).toBe(400);
+  it('rejects an unknown list, a bad period, an oversized page and an odd facet value', async () => {
+    expect((await get('/api/details/salaries?from=202608&to=202608')).statusCode).toBe(400);
+    expect((await get('/api/details/doctors?from=202609&to=202608')).statusCode).toBe(400);
+    expect((await get('/api/details/doctors?from=202608&to=202608&pageSize=5000')).statusCode).toBe(400);
+    expect((await get("/api/details/doctors?from=202608&to=202608&status=x';--")).statusCode).toBe(400);
   });
 
   it('needs a session', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/effort/missed-doctors?from=202608&to=202608' });
+    const res = await app.inject({ method: 'GET', url: '/api/details/doctors?from=202608&to=202608' });
     expect(res.statusCode).toBe(401);
   });
 });

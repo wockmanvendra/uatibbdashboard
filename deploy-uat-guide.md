@@ -40,15 +40,18 @@ If something already uses it, pick another free port (for example 8797). Change 
 | Service | Address | Test from the UAT server |
 |---|---|---|
 | Azure Synapse (sales data) | `sap-analytics-sql1.sql.azuresynapse.net:1433` | `nc -zv sap-analytics-sql1.sql.azuresynapse.net 1433` |
-| Sign-in database (PostgreSQL) | `192.168.1.76:5432`, database `sales_dash_user_db` | `nc -zv 192.168.1.76 5432` |
-| Infinity field-structure API | `https://infinityplus.wockhardt.com` | `curl -sS -o /dev/null -w '%{http_code}\n' https://infinityplus.wockhardt.com/plus/report` |
+| Central User Service (sign-in) | `https://users.wockregenerative.com` | `curl -sS https://users.wockregenerative.com/.well-known/jwks.json` (prints a key) |
 
 What to do when a test fails:
 - **Synapse:** the Azure Synapse firewall must allow this server's outbound public IP (`curl -s ifconfig.me`). Ask whoever administers the Azure workspace to add it.
-- **PostgreSQL:** on 192.168.1.76, `pg_hba.conf` must accept `192.168.3.112`, for example `host sales_dash_user_db postgres 192.168.3.112/32 scram-sha-256`. Then reload Postgres. The network must also allow 192.168.3.0 → 192.168.1.76:5432.
-- **Infinity:** any HTTP code (200, 401, 404) means it is reachable. A timeout means outbound HTTPS is blocked.
+- **Central User Service:** it runs on this same server behind Apache. A timeout means the name does not resolve from here; ask for `users.wockregenerative.com` to be reachable from 192.168.3.112.
 
-UAT shares the sign-in database with the current test server (192.168.3.142). Users, BU-head accounts and sign-in history are the same on both.
+**1.3a Register the dashboard in the Central User Service (once).** On its admin page (`https://users.wockregenerative.com/admin`, as a service admin), add a client app:
+- **client_id** `ibb-insights`, **name** "IBB Insights" (it appears in the OTP email).
+- **Roles:** nsm, zsm, rm, tm, bu-head, admin. **Divisions:** none ticked (all). **Token TTL:** 12h.
+- The page shows the **API key once**: it goes into the API's `.env` as `CENTRAL_API_KEY` (section 4).
+
+Everyone with an active account there can then sign in. Users, BU heads and admins are managed only on that admin page (section 7).
 
 **1.4 Apache modules:**
 
@@ -95,7 +98,7 @@ sudo rm -rf api && sudo mv ibb-insights-api api
 
 # Owned by the account that runs PM2 (the same user as the other PM2 apps).
 sudo chown -R $USER:$USER api
-chmod 600 api/.env          # it holds database passwords and the session secret
+chmod 600 api/.env          # it holds the Synapse password and the sign-in API key
 ```
 
 **Check `.env` before the first start** (`nano /var/www/ibb-insights/api/.env`). It is already filled in for UAT:
@@ -103,11 +106,13 @@ chmod 600 api/.env          # it holds database passwords and the session secret
 | Setting | UAT value | Notes |
 |---|---|---|
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | change `PORT` only if 8787 was taken (step 1.2) |
-| `NODE_ENV` | `development` | sign-in codes (OTP) are **shown on the login screen**, as on the test server, because no SMS/e-mail sender is configured. See section 9 to send them by SMS instead. |
+| `NODE_ENV` | `production` | |
 | `CORS_ORIGIN` | `https://uatIbbInsights.wockhardt.com,http://…` | |
-| `SQL_*`, `USER_DATABASE_URL`, `INFINITY_*` | copied from the test server | same data sources as the test server |
-| `JWT_SECRET` | generated for UAT | signs sign-in sessions; changing it signs everyone out |
-| `CACHE_DRIVER` | `none` | every request reads the warehouse directly |
+| `SQL_*` | copied from the test server | the same Synapse data |
+| `CENTRAL_USER_SERVICE_URL` / `CENTRAL_CLIENT_ID` | `https://users.wockregenerative.com` / `ibb-insights` | sign-in |
+| `CENTRAL_API_KEY` | **fill in** | the key from step 1.3a; the API will not start without it |
+| `ALL_DIVISION_MOBILES` | optional | comma-separated mobiles that see every division (the service's admins always do) |
+| `CACHE_DRIVER` | `memory` | views are cached in the API and rebuilt when Synapse data changes — see section 11 |
 
 **Start it with PM2:**
 
@@ -156,25 +161,30 @@ curl -s  -H 'Host: uatIbbInsights.wockhardt.com' http://127.0.0.1/api/meta/versi
 In a browser, open **http://uatIbbInsights.wockhardt.com** and check:
 
 1. The login page loads. Refreshing on `/login` still shows it.
-2. Sign in with a field-force mobile number. The OTP appears on the screen in UAT.
+2. Sign in with a mobile number registered in the Central User Service. The OTP arrives by **email**.
 3. The Division tab loads. The first load takes 20–60 seconds, because figures are read live from Synapse.
-4. **BU Head login** (`/login/bu-head`) works for an existing BU-head account.
+4. A BU head signs in the same way (mobile + emailed OTP) and sees their division.
 
 ---
 
-## 7. BU-head (password) accounts
+## 7. Users and access
 
-Accounts live in the shared sign-in database, so accounts created on the test server already work here. To manage them from the UAT server:
+Everyone signs in through the **Central User Service** (`https://users.wockregenerative.com/admin`):
+- **Field force** (NSM, ZSM, RM, TM) come from Infinity's field structure via the service's sync, for all 8 sales divisions.
+- **BU heads and admins** are added there by hand, with their division and an email address (the OTP is emailed).
+- Disabling a person there ends their dashboard session within a minute.
 
-```bash
-cd /var/www/ibb-insights/api
-node --env-file=.env dist/tools/accounts.js list
-node --env-file=.env dist/tools/accounts.js add --name "Full Name" --mobile 98XXXXXXXX --division 85 --email name@wockhardt.com
-node --env-file=.env dist/tools/accounts.js reset  --mobile 98XXXXXXXX   # new temporary password, unlocks
-node --env-file=.env dist/tools/accounts.js unlock --mobile 98XXXXXXXX
-```
+What each person sees:
 
-`add` and `reset` print a temporary password once. Give it to the person privately. They must change it at first sign-in.
+| Role | Sees |
+|---|---|
+| TM | their HQ(s) |
+| RM | their region(s) |
+| ZSM | their zone(s) |
+| NSM, BU head, admin | their division |
+| Service admins, and mobiles in `ALL_DIVISION_MOBILES` | every division |
+
+HQs, regions and zones come from the service's field hierarchy, the same Infinity structure as before.
 
 ---
 
@@ -186,7 +196,7 @@ On the Windows machine, from `D:\Lavkush\salesDashborad`, rebuild the package:
 node package-uat.mjs
 ```
 
-It reuses the UAT session secret, so users stay signed in. Copy the two `.tar.gz` files to `/tmp` (section 2), then on the server:
+Sessions are the Central User Service's, so users stay signed in. Copy the two `.tar.gz` files to `/tmp` (section 2), then on the server:
 
 ```bash
 # Frontend
@@ -209,21 +219,9 @@ Users should press **Ctrl+F5** once after a frontend update.
 
 ---
 
-## 9. Sending OTPs by SMS (optional, for production-like UAT)
+## 9. (Retired) On-screen OTPs and SMS
 
-To stop showing sign-in codes on screen, add the SMS gateway settings that the D2D portal uses to `.env`, set `NODE_ENV=production`, and run `pm2 reload ibb-insights-api`:
-
-```
-NODE_ENV=production
-SMS_URL=...
-SMS_USERNAME=...
-SMS_PASSWORD=...
-SMS_FROM=...
-SMS_TEMPLATE_ID=...
-SMS_OTP_TEXT=...{otp}...      # must match the DLT-registered template exactly
-```
-
-E-mail instead: set `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM` (and `SMTP_USER` / `SMTP_PASSWORD` if the relay needs them). In production the API refuses to start unless one of the two is configured. `pm2 logs` will say so.
+Sign-in codes are now always emailed by the Central User Service. The old `SMS_*`, `SMTP_*`, `JWT_SECRET`, `USER_DATABASE_URL` and `INFINITY_*` settings are no longer read and can be deleted from `.env`.
 
 ---
 
@@ -238,6 +236,34 @@ E-mail instead: set `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM` (and `SMTP_USER` / `S
 | Apache errors for this site | `sudo tail -f /var/log/apache2/ibb-insights-error.log` |
 | Apache access log | `sudo tail -f /var/log/apache2/ibb-insights-access.log` |
 
+---
+
+## 11. The cache (why reloads are fast)
+
+Each dashboard view (user scope × tab × filters) is kept in the API's memory after its first load. While the Synapse data is unchanged, the same view is served in well under a second.
+
+Every `DATA_CHECK_MINUTES` (default 5) the API checks whether any source changed. When it has:
+- Users still get the previous figures at once. The footer says "newer data is being loaded".
+- In the background the API rebuilds the NSM, ZSM and BU-head default views (fiscal year to date) first. It then rebuilds the views opened in the last `WARM_HOT_HOURS`, `WARM_CONCURRENCY` at a time.
+- The page picks up the new figures on its own within about 30 seconds of its view being rebuilt.
+
+So figures are at most a few minutes behind Synapse. A user's first look at a filter combination nobody has opened yet still takes the full Synapse time once.
+
+| Setting (`.env`) | Default | Meaning |
+|---|---|---|
+| `CACHE_DRIVER` | `memory` | `memory`: kept in the API process. `none`: no cache. |
+| `DATA_CHECK_MINUTES` | `5` | How often to check for new Synapse data |
+| `WARM_CONCURRENCY` | `1` | Views rebuilt at once (leaves Synapse room for users) |
+| `WARM_MAX_VIEWS` | `300` | Recently used views rebuilt after a change |
+| `WARM_HOT_HOURS` | `24` | How recent "recently used" is |
+| `MEMORY_CACHE_MAX` | `1000` | Most views held in memory |
+
+The memory cache empties when the API restarts (`pm2 reload`, a deploy). The senior defaults are rebuilt within minutes of the start; the log shows `cache warmer: views rebuilt`.
+
+To clear the cache by hand, restart the API: `pm2 reload <app>`.
+
+If the API is ever run as several processes, set `CACHE_DRIVER=redis` and `REDIS_URL=redis://127.0.0.1:6379/5` (after `sudo apt install redis-server`). It also suits a cache that should survive restarts. No code change is needed.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -246,7 +272,9 @@ E-mail instead: set `SMTP_HOST`, `SMTP_PORT`, `EMAIL_FROM` (and `SMTP_USER` / `S
 | Login page loads, but every action says it cannot reach the server (502/503) | The API is not running, or the port differs between `.env` and the Apache site. Check `pm2 status` and `curl 127.0.0.1:8787/health`. |
 | 503, and `pm2 status` shows the app **online**, but `pm2 logs` has no "Server listening" line | PM2 is running `dist/src/server.js`, which only starts itself when Node runs it directly. Run `dist/src/start.js` instead, as the packaged `ecosystem.config.cjs` does. |
 | `pm2 logs` shows `Invalid environment configuration` | A setting in `.env` is missing or wrong. The message names it. |
-| Login fails with a database error, or the log shows `ECONNREFUSED 192.168.1.76:5432` / `no pg_hba.conf entry` | Step 1.3, PostgreSQL. |
+| Login says "The login service is not reachable" | The Central User Service is down or unreachable from this server. Step 1.3. |
+| `pm2 logs` says `CENTRAL_API_KEY is required` | Step 1.3a: put the app's API key in `.env`. |
+| Login says "No active account is registered…" or the app is not allowed | The person is not active in the Central User Service, or the `ibb-insights` client does not allow their role. Fix it on its admin page. |
 | Dashboard errors after login, and the log shows a Synapse connection or firewall error | Step 1.3, Azure Synapse firewall. |
 | A dashboard load fails after about a minute with 504 | The Synapse query was slower than Apache allows. Raise both `timeout=` values and `ProxyTimeout` in the site file. |
 | Old screens after an update | Ctrl+F5. The site file stops browsers caching `index.html`. |

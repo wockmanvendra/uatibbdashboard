@@ -15,8 +15,8 @@
  */
 import { permittedFor, type Scope } from '../plugins/scope.js';
 import {
-  CN_COLUMN, DIMENSION, MONTH_COL, PRODUCT_KEY, SOURCE, TERRITORY_ALIAS,
-  code, codeOrUnassigned, type DimensionName,
+  CN_COLUMN, DIMENSION, MONTH_COL, PRODUCT_KEY, SOURCE, TERRITORY_ALIAS, UNASSIGNED,
+  code, codeOrUnassigned, divisionCode, divisionName, type DimensionName,
 } from './sqlFragments.js';
 import type { SqlParams } from './db.js';
 
@@ -50,7 +50,7 @@ export type Matchers = Record<FilterKey, (list: string) => string>;
  * silently returns nothing.
  */
 export const FACT_MATCH: Matchers = {
-  division: (l) => `${code(DIMENSION.division.codeCol)} IN ${l}`,
+  division: (l) => `${divisionCode(DIMENSION.division.codeCol)} IN ${l}`,
   brand: (l) => `${code(DIMENSION.brand.codeCol)} IN ${l}`,
   zone: (l) => `${code(DIMENSION.zone.codeCol)} IN ${l}`,
   region: (l) => `${code(DIMENSION.region.codeCol)} IN ${l}`,
@@ -65,7 +65,7 @@ export const FACT_MATCH: Matchers = {
  * rows name some brands differently, and either name should find the product.
  */
 export const CN_MATCH: Matchers = {
-  division: (l) => `${code(CN_COLUMN.division)} IN ${l}`,
+  division: (l) => `${divisionCode(CN_COLUMN.division)} IN ${l}`,
   hq: (l) => `${code(CN_COLUMN.hq)} IN ${l}`,
   zone: (l) => `${TERRITORY_ALIAS}.zone_code IN ${l}`,
   region: (l) => `${TERRITORY_ALIAS}.region_code IN ${l}`,
@@ -186,6 +186,14 @@ export function grainSelect(dimension: DimensionName): {
   groupBy: string;
 } {
   const { codeCol, nameCol } = DIMENSION[dimension];
+  if (dimension === 'division') {
+    const node = `COALESCE(${divisionCode(codeCol)}, '${UNASSIGNED}')`;
+    return {
+      select: `${node} AS node_code,
+    ${divisionName(node, `MAX(${code(nameCol)})`)} AS node_name`,
+      groupBy: node,
+    };
+  }
   const node = codeOrUnassigned(codeCol);
   return {
     select: `${node} AS node_code,\n    COALESCE(MAX(${code(nameCol)}), ${node}) AS node_name`,

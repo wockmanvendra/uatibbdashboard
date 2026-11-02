@@ -24,10 +24,13 @@ import {
 } from '../components/panels/SummaryTables';
 import { KeyBrandsTable } from '../components/panels/KeyBrandsTable';
 import { GeoTable } from '../components/panels/GeoTable';
+import { StockistTable } from '../components/panels/StockistTable';
 import { CreditNoteCard } from '../components/panels/CreditNotePanel';
 import { CnDetailPanels } from '../components/panels/CnDetail';
 import { CallAvgFieldDays, DoctorCounts, EffortTable, PcpmBox } from '../components/panels/EffortPanels';
-import { MissedDoctorsDrawer } from '../components/panels/MissedDoctorsDrawer';
+import { HmlTable, HmlTierPie, HospitalCoverageChart, TierCoverageChart } from '../components/panels/HospitalPanels';
+import { DetailDrawer, type DetailRequest } from '../components/panels/DetailDrawer';
+import type { OpenDetail } from '../components/ui/FigureLink';
 import { MissedByCategory } from '../components/charts/MissedByCategory';
 import { TrendCombo } from '../components/charts/TrendCombo';
 import { CountTrend } from '../components/charts/CountTrend';
@@ -86,9 +89,10 @@ export function TabPage() {
   const { data, isPending, isFetching, isError, error, refetch } = useDashTab(config.id, filters);
   usePrefetchMonths(config.id, filters);
 
-  // The missed-doctor list: closed, or open on a category (null: all).
-  const [missed, setMissed] = useState<{ category: string | null } | null>(null);
-  const closeMissed = useCallback(() => setMissed(null), []);
+  // The side panel: closed, or open on a detail list with its facets chosen.
+  const [detail, setDetail] = useState<DetailRequest | null>(null);
+  const openDetail: OpenDetail = useCallback((list, initial) => setDetail({ list, initial }), []);
+  const closeDetail = useCallback(() => setDetail(null), []);
 
   const has = (p: string) => config.panels.includes(p as never);
 
@@ -169,6 +173,7 @@ export function TabPage() {
                 inventory={data?.inventory}
                 loading={firstLoad}
                 stale={stale}
+                onOpen={openDetail}
               />
             </div>
           </>
@@ -180,6 +185,10 @@ export function TabPage() {
         )}
         {has('geoTable') && (
           <GeoTable data={data?.geoTable} loading={firstLoad} stale={stale} note={cnPctNote(data?.meta)} />
+        )}
+
+        {has('stockistTable') && (
+          <StockistTable data={data?.stockistTable} loading={firstLoad} stale={stale} />
         )}
 
         {/* ---- Credit notes, with attrition beside them ----------------- */}
@@ -198,6 +207,7 @@ export function TabPage() {
                 loading={firstLoad}
                 stale={stale}
                 reason={reasonFor(data, 'manpower')}
+                onOpen={openDetail}
               />
             )}
           </div>
@@ -218,6 +228,7 @@ export function TabPage() {
                 stale={stale}
                 note={reasonFor(data, 'effort')}
                 caveat={effortCaveat(data)}
+                onOpen={openDetail}
               />
               <EffortTable
                 data={data?.effort}
@@ -225,7 +236,7 @@ export function TabPage() {
                 stale={stale}
                 note={reasonFor(data, 'effort')}
                 caveat={reasonFor(data, 'effort.noSource')}
-                onShowMissed={() => setMissed({ category: null })}
+                onOpen={openDetail}
               />
               {has('rx') && (
                 <RxRxberPd
@@ -238,9 +249,29 @@ export function TabPage() {
                 />
               )}
               {has('pcpm') && (
-                <PcpmBox data={data?.pcpm} loading={firstLoad} stale={stale} note={reasonFor(data, 'pcpm')} />
+                <PcpmBox data={data?.pcpm} loading={firstLoad} stale={stale} note={reasonFor(data, 'pcpm')} onOpen={openDetail} />
               )}
             </div>
+
+            {/* RESEARCH only: the API sends hospitals when division 84 is in view. */}
+            {has('hospitals') && data?.hospitals && (
+              <>
+                <SectionBar title="Hospital Coverage & Tier Mix" />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <HospitalCoverageChart data={data.hospitals} reason={reasonFor(data, 'hospitals.coverage')} stale={stale} />
+                  <HmlTierPie data={data.hospitals} stale={stale} />
+                  <TierCoverageChart data={data.hospitals} stale={stale} />
+                </div>
+                <HmlTable
+                  data={data.hospitals}
+                  loading={false}
+                  stale={stale}
+                  note={reasonFor(data, 'hospitals.coverage')}
+                  onOpen={openDetail}
+                />
+                <SectionBar title="Effort Trends" />
+              </>
+            )}
 
             {/* Six columns on wide screens: Drs Met beside the monthly table,
                 then Drs Missed beside Rx — no row is left with an empty slot. */}
@@ -284,6 +315,7 @@ export function TabPage() {
                       loading={false}
                       stale={stale}
                       note={reasonFor(data, 'effort')}
+                      onOpen={openDetail}
                     />
                   </div>
                 </>
@@ -296,7 +328,7 @@ export function TabPage() {
                   <MissedByCategory
                     labels={data.effort.missedByCategory.labels}
                     values={data.effort.missedByCategory.values}
-                    onSelect={(category) => setMissed({ category })}
+                    onSelect={(category) => openDetail('doctors', { status: 'missed', category })}
                     stale={stale}
                   />
                 ) : (
@@ -488,16 +520,7 @@ export function TabPage() {
 
         <DashboardFooter meta={data?.meta} periodLabel={periodLabel} />
 
-        {has('effort') && (
-          <MissedDoctorsDrawer
-            open={missed !== null}
-            onClose={closeMissed}
-            filters={filters}
-            periodLabel={periodLabel}
-            categories={data?.effort?.missedByCategory?.labels ?? []}
-            initialCategory={missed?.category ?? null}
-          />
-        )}
+        <DetailDrawer request={detail} onClose={closeDetail} filters={filters} periodLabel={periodLabel} />
       </div>
 
       {/* Deep-linking a tab that no longer exists lands on the default. */}

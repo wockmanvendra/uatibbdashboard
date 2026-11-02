@@ -1,5 +1,5 @@
 /**
- * Missed doctors (config VISIT_SUMMARY_TABLE, dbo.infinity_Visit_Summary): one
+ * Doctor visits (config VISIT_SUMMARY_TABLE, dbo.infinity_Visit_Summary): one
  * row per doctor, territory and month, with the TM's, RM's and ZSM's visit
  * counts. A doctor is missed when the TM did not visit them: tmVisitCounts = 0.
  *
@@ -12,25 +12,54 @@
  *   for each: the count is the number of rows the list shows.
  * - Doctors are not split by brand, so a brand filter leaves the list whole.
  *
- * Counting and paging are done in SQL. (I3)
+ * This module counts the missed doctors for the Effort Dashboard; the list
+ * itself is details/doctors.ts. Counting is done in SQL. (I3)
  */
 import type { Db, SqlParams } from '../db.js';
 import {
-  DIMENSION, SOURCE, VISIT_SOURCE, code, num, territoryJoin,
+  DIMENSION, SOURCE, VISIT_SOURCE, code, divisionCode, num, territoryJoin,
 } from '../sqlFragments.js';
 import { buildPredicate, territoryMatch, type PanelFilters } from '../queryBuilder.js';
 import type { Scope } from '../../plugins/scope.js';
-import type { MissedDoctorRow, MissedDoctorsResponse } from '../../types/api.js';
 
-const ALIAS = 'vs';
+export const VISIT_ALIAS = 'vs';
+const ALIAS = VISIT_ALIAS;
 
 /** Text columns are nvarchar(max); a bounded copy can be sorted and compared. */
 const text = (col: string, n = 200) => `CAST(${code(col)} AS NVARCHAR(${n}))`;
 
-/** The missed rows, with the columns every query reads. */
-const MISSED = `(
+/** Which doctors: every one, those the TM met, or those the TM missed. */
+export type VisitStatus = 'all' | 'met' | 'missed';
+
+const STATUS_CONDITION: Record<VisitStatus, string> = {
+  all: '1 = 1',
+  met: 'tmVisitCounts > 0',
+  missed: 'tmVisitCounts = 0',
+};
+
+/**
+ * FROM and WHERE for the selection's visit rows, under alias `vs`, with
+ * yearMonth, div_code, hq_code, zone, region, hq, tm_code, tm_name,
+ * doctor_code, doctor_name, speciality, category, tm_visits, tm_dates,
+ * rm_visits and zsm_visits.
+ */
+export function visitRows(
+  scope: Scope,
+  filters: PanelFilters,
+  status: VisitStatus,
+): { from: string; where: string; params: SqlParams } {
+  const p = buildPredicate(scope, filters, { match: territoryMatch(ALIAS), prefix: 'v' });
+  const joinTerritory = p.constrained.includes('zone') || p.constrained.includes('region');
+
+  let where = p.where;
+  // With no division constrained, hold to the divisions the dashboard covers:
+  // the table also has rows under division "0" (Market Access, Nepal, tests).
+  if (!p.constrained.includes('division')) {
+    where += `\n    AND ${ALIAS}.div_code IN (SELECT DISTINCT ${divisionCode(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
+  }
+  const rows = `(
     SELECT LEFT(effortdate, 6) AS yearMonth,
-           ${code('divisionCode')} AS div_code,
+           ${divisionCode('divisionCode')} AS div_code,
            ${text('sapCode', 50)} AS hq_code,
            ${text('zone')} AS zone,
            ${text('region')} AS region,
@@ -41,25 +70,15 @@ const MISSED = `(
            ${text('doctorName')} AS doctor_name,
            ${text('speciality')} AS speciality,
            ${text('classification', 50)} AS category,
+           tmVisitCounts AS tm_visits,
+           ${text('tmVisitDates', 400)} AS tm_dates,
            rmVisitCounts AS rm_visits,
            zsmVisitCounts AS zsm_visits
       FROM ${VISIT_SOURCE}
-     WHERE tmVisitCounts = 0
+     WHERE ${STATUS_CONDITION[status]}
   ) ${ALIAS}`;
-
-/** FROM and WHERE for the selection: the filters and the user's scope. */
-function missedQuery(scope: Scope, filters: PanelFilters): { from: string; where: string; params: SqlParams } {
-  const p = buildPredicate(scope, filters, { match: territoryMatch(ALIAS), prefix: 'v' });
-  const joinTerritory = p.constrained.includes('zone') || p.constrained.includes('region');
-
-  let where = p.where;
-  // With no division constrained, hold to the divisions the dashboard covers:
-  // the table also has rows under division "0" (Market Access, Nepal, tests).
-  if (!p.constrained.includes('division')) {
-    where += `\n    AND ${ALIAS}.div_code IN (SELECT DISTINCT ${code(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
-  }
   return {
-    from: `${MISSED}${joinTerritory ? `\n  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}` : ''}`,
+    from: `${rows}${joinTerritory ? `\n  ${territoryJoin(`${ALIAS}.div_code`, `${ALIAS}.hq_code`)}` : ''}`,
     where,
     params: p.params,
   };
@@ -87,7 +106,7 @@ export async function fetchMissedSummary(
   scope: Scope,
   filters: PanelFilters,
 ): Promise<MissedSummary> {
-  const { from, where, params } = missedQuery(scope, filters);
+  const { from, where, params } = visitRows(scope, filters, 'missed');
   const rows = await db.all<{ ym: string | number; category: string | null; n: string | number }>(
     `SELECT ${ALIAS}.yearMonth AS ym, ${ALIAS}.category AS category, COUNT_BIG(*) AS n
   FROM ${from}
@@ -113,113 +132,5 @@ export async function fetchMissedSummary(
     byCategory: [...byCategory]
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => categoryOrder(a.label, b.label)),
-  };
-}
-
-export interface MissedListOptions {
-  page: number;
-  pageSize: number;
-  /** Matched against doctor name and code, HQ, TM and speciality. */
-  search?: string;
-  /** Only these categories ("Unclassified" for none). */
-  categories?: string[];
-}
-
-interface ListRow {
-  rn: string | number;
-  total: string | number;
-  ym: string | number;
-  zone: string | null;
-  region: string | null;
-  hq: string | null;
-  hq_code: string | null;
-  tm_code: string | null;
-  tm_name: string | null;
-  doctor_code: string | null;
-  doctor_name: string | null;
-  speciality: string | null;
-  category: string | null;
-  rm_visits: string | number | null;
-  zsm_visits: string | number | null;
-}
-
-/** LIKE pattern for a search term: its wildcards matched literally. */
-const likeTerm = (s: string) => `%${s.replace(/[%_[]/g, '[$&]')}%`;
-
-/**
- * One page of the missed doctors, by month, zone, region, HQ and doctor. The
- * dedicated pool has no OFFSET/FETCH, so pages are cut by ROW_NUMBER, and the
- * total comes from the same pass (COUNT(*) OVER ()).
- */
-export async function fetchMissedDoctors(
-  db: Db,
-  scope: Scope,
-  filters: PanelFilters,
-  { page, pageSize, search, categories }: MissedListOptions,
-): Promise<MissedDoctorsResponse> {
-  const q = missedQuery(scope, filters);
-  const params: SqlParams = { ...q.params };
-  let where = q.where;
-
-  const term = search?.trim();
-  if (term) {
-    params.q = likeTerm(term);
-    where += `\n    AND (${['doctor_name', 'doctor_code', 'hq', 'tm_name', 'speciality']
-      .map((c) => `${ALIAS}.${c} LIKE @q`)
-      .join(' OR ')})`;
-  }
-  if (categories?.length) {
-    const named = categories.filter((c) => c !== NO_CATEGORY);
-    const parts = named.map((c, i) => {
-      params[`k${i}`] = c;
-      return `@k${i}`;
-    });
-    const clauses = [
-      ...(parts.length ? [`${ALIAS}.category IN (${parts.join(', ')})`] : []),
-      ...(categories.includes(NO_CATEGORY) ? [`${ALIAS}.category IS NULL`] : []),
-    ];
-    where += `\n    AND (${clauses.join(' OR ')})`;
-  }
-
-  params.rFrom = (page - 1) * pageSize + 1;
-  params.rTo = page * pageSize;
-
-  const rows = await db.all<ListRow>(
-    `SELECT x.* FROM (
-    SELECT ${ALIAS}.yearMonth AS ym, ${ALIAS}.zone, ${ALIAS}.region, ${ALIAS}.hq, ${ALIAS}.hq_code,
-           ${ALIAS}.tm_code, ${ALIAS}.tm_name, ${ALIAS}.doctor_code, ${ALIAS}.doctor_name,
-           ${ALIAS}.speciality, ${ALIAS}.category, ${ALIAS}.rm_visits, ${ALIAS}.zsm_visits,
-           ROW_NUMBER() OVER (ORDER BY ${ALIAS}.yearMonth, ${ALIAS}.zone, ${ALIAS}.region, ${ALIAS}.hq,
-                                       ${ALIAS}.doctor_name, ${ALIAS}.doctor_code) AS rn,
-           COUNT_BIG(*) OVER () AS total
-      FROM ${q.from}
-     WHERE ${where}
-  ) x
-  WHERE x.rn BETWEEN @rFrom AND @rTo
-  ORDER BY x.rn`,
-    params,
-  );
-
-  return {
-    total: rows.length ? Number(rows[0]!.total) : 0,
-    page,
-    pageSize,
-    rows: rows.map(
-      (r): MissedDoctorRow => ({
-        month: Number(r.ym),
-        zone: r.zone,
-        region: r.region,
-        hq: r.hq,
-        hqCode: r.hq_code,
-        tmName: r.tm_name,
-        tmCode: r.tm_code,
-        doctorCode: r.doctor_code,
-        doctorName: r.doctor_name,
-        speciality: r.speciality,
-        category: r.category,
-        rmVisits: num(r.rm_visits),
-        zsmVisits: num(r.zsm_visits),
-      }),
-    ),
   };
 }

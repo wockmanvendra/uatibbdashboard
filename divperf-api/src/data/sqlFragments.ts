@@ -63,6 +63,32 @@ const DEC = 'DECIMAL(38,6)';
 /** Normalises a hierarchy code: trims, folds blank to null. */
 export const code = (col: string) => `NULLIF(LTRIM(RTRIM(${col})), '')`;
 
+/**
+ * A division code expression read as the dashboard's division: an alias
+ * (config DIVISION_ALIASES — RESEARCH's 84) becomes its division (02). The
+ * literals are config codes, validated as letters and digits.
+ */
+export const canonicalDivision = (expr: string) => {
+  const aliases = Object.entries(config.DIVISION_ALIASES);
+  if (!aliases.length) return expr;
+  return `CASE ${expr} ${aliases.map(([alias, to]) => `WHEN '${alias}' THEN '${to}'`).join(' ')} ELSE ${expr} END`;
+};
+
+/** A division code column, normalised and read through its aliases. */
+export const divisionCode = (col: string) => canonicalDivision(code(col));
+
+/**
+ * A division's display name: config DIVISION_NAMES (RESEARCH for 02, whose
+ * 84 rows say CRITICAL CARE), else `nameExpr`, else the code.
+ */
+export const divisionName = (codeExpr: string, nameExpr: string) => {
+  const names = Object.entries(config.DIVISION_NAMES);
+  const named = names.length
+    ? `CASE ${codeExpr} ${names.map(([d, n]) => `WHEN '${d}' THEN '${n}'`).join(' ')} END, `
+    : '';
+  return `COALESCE(${named}${nameExpr}, ${codeExpr})`;
+};
+
 /** Same, but with the display fallback applied — safe to GROUP BY and return. */
 export const codeOrUnassigned = (col: string) =>
   `COALESCE(${code(col)}, '${UNASSIGNED}')`;
@@ -255,7 +281,7 @@ export const CN_COLUMN = {
  * and `hqExpr` are the joining source's normalised division and HQ codes.
  */
 export const territoryJoin = (divisionExpr: string, hqExpr: string, kind = 'LEFT JOIN') => `${kind} (
-    SELECT ${code(DIMENSION.division.codeCol)} AS div_code,
+    SELECT ${divisionCode(DIMENSION.division.codeCol)} AS div_code,
            ${code(DIMENSION.hq.codeCol)} AS hq_code,
            MAX(${code(DIMENSION.zone.codeCol)}) AS zone_code,
            MAX(${code(DIMENSION.zone.nameCol)}) AS zone_name,
@@ -264,13 +290,13 @@ export const territoryJoin = (divisionExpr: string, hqExpr: string, kind = 'LEFT
            MAX(${code(DIMENSION.hq.nameCol)}) AS hq_name
       FROM ${SOURCE}
      WHERE ${code(DIMENSION.hq.codeCol)} IS NOT NULL
-     GROUP BY ${code(DIMENSION.division.codeCol)}, ${code(DIMENSION.hq.codeCol)}
+     GROUP BY ${divisionCode(DIMENSION.division.codeCol)}, ${code(DIMENSION.hq.codeCol)}
   ) ${TERRITORY_ALIAS}
     ON ${TERRITORY_ALIAS}.div_code = ${divisionExpr}
    AND ${TERRITORY_ALIAS}.hq_code = ${hqExpr}`;
 
 /** The credit notes' territory lookup. */
-export const TERRITORY_JOIN = territoryJoin(code(CN_COLUMN.division), code(CN_COLUMN.hq));
+export const TERRITORY_JOIN = territoryJoin(divisionCode(CN_COLUMN.division), code(CN_COLUMN.hq));
 
 /** The sales table's product code as the view's integer key. */
 export const PRODUCT_KEY = `TRY_CAST(${code('Product_code')} AS INT)`;
@@ -301,3 +327,9 @@ export const EMP_COUNT_SOURCE = config.EMP_COUNT_TABLE;
 // month. See panels/missedDoctors.ts.
 
 export const VISIT_SOURCE = config.VISIT_SUMMARY_TABLE;
+
+// ---------------------------------------------------------------------------
+// Hospitals (config HOSPITAL_TABLE): the hospital master list, one row per
+// hospital with its HQ and tier. See panels/hospitals.ts.
+
+export const HOSPITAL_SOURCE = config.HOSPITAL_TABLE;

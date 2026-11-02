@@ -20,7 +20,7 @@ import { isClosed, label } from '../lib/yrmn.js';
 import { AVAILABLE_MONTHS, BRANDS, DIVISIONS, HQS, OPEN_YR_MN, REGIONS, ZONES } from './mockData.js';
 import { config } from '../config.js';
 import { getDb } from '../data/db.js';
-import { DATE_KEY, DIMENSION, SOURCE, code } from '../data/sqlFragments.js';
+import { DATE_KEY, DIMENSION, SOURCE, code, divisionCode, divisionName } from '../data/sqlFragments.js';
 import { getDataVersion } from './versionService.js';
 
 export interface FilterSelection {
@@ -72,7 +72,7 @@ async function fetchHierarchy(): Promise<Hierarchy & { at: number }> {
   const [rows, brandRows, monthRows] = await Promise.all([
     db.all<HierarchyRow>(
       `SELECT DISTINCT
-    ${code(div.codeCol)}    AS spart,       ${code(div.nameCol)}    AS div_name,
+    ${divisionCode(div.codeCol)} AS spart, ${divisionName(divisionCode(div.codeCol), code(div.nameCol))} AS div_name,
     ${code(zone.codeCol)}   AS zone_code,   ${code(zone.nameCol)}   AS zone_name,
     ${code(region.codeCol)} AS region_code, ${code(region.nameCol)} AS region_name,
     ${code(hq.codeCol)}     AS hq_code,     ${code(hq.nameCol)}     AS hq_name
@@ -80,7 +80,7 @@ async function fetchHierarchy(): Promise<Hierarchy & { at: number }> {
   WHERE ${code(div.codeCol)} IS NOT NULL`,
     ),
     db.all<{ spart: string; brand: string }>(
-      `SELECT DISTINCT ${code(div.codeCol)} AS spart, ${code(brand.codeCol)} AS brand
+      `SELECT DISTINCT ${divisionCode(div.codeCol)} AS spart, ${code(brand.codeCol)} AS brand
   FROM ${SOURCE}
   WHERE ${code(div.codeCol)} IS NOT NULL AND ${code(brand.codeCol)} IS NOT NULL`,
     ),

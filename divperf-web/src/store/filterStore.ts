@@ -7,12 +7,23 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import type { Filters } from '../queries/keys';
+import { defaultPeriod } from '../lib/yrmn';
 
 export type Density = 'comfortable' | 'compact';
 
 interface FilterState extends Filters {
   density: Density;
+  /**
+   * The period is settled: the default from the server's open month has been
+   * applied, or the user chose one. Dashboard queries wait for it, so the first
+   * load is the period the user sees — and the one the API has pre-built.
+   */
+  periodReady: boolean;
+  /** The user picked the period; the default no longer applies. */
+  periodChosen: boolean;
   setPeriod: (from: number, to: number) => void;
+  /** Fiscal year to date for the server's open month, unless the user chose a period. */
+  applyDefaultPeriod: (openYrMn: number) => void;
   setDimension: (key: 'division' | 'brand' | 'zone' | 'region' | 'hq', values: string[]) => void;
   clearAll: () => void;
   setDensity: (d: Density) => void;
@@ -26,8 +37,8 @@ function initialDensity(): Density {
 }
 
 /**
- * Default period: the current fiscal year to date. The real open month arrives
- * from the API; these are only the values used before it does.
+ * Default period: the current fiscal year to date (applyDefaultPeriod). The
+ * real open month arrives from the API; these are only placeholders until then.
  */
 const DEFAULT_FROM = 202604;
 const DEFAULT_TO = 202608;
@@ -35,6 +46,8 @@ const DEFAULT_TO = 202608;
 export const useFilterStore = create<FilterState>((set) => ({
   from: DEFAULT_FROM,
   to: DEFAULT_TO,
+  periodReady: false,
+  periodChosen: false,
   division: [],
   brand: [],
   zone: [],
@@ -42,7 +55,10 @@ export const useFilterStore = create<FilterState>((set) => ({
   hq: [],
   density: initialDensity(),
 
-  setPeriod: (from, to) => set({ from, to }),
+  setPeriod: (from, to) => set({ from, to, periodChosen: true, periodReady: true }),
+
+  applyDefaultPeriod: (openYrMn) =>
+    set((s) => (s.periodChosen ? { periodReady: true } : { ...defaultPeriod(openYrMn), periodReady: true })),
 
   setDimension: (key, values) =>
     set((s) => {

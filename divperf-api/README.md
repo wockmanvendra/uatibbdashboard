@@ -79,86 +79,50 @@ division (stock is per plant). Each is explained in `meta.unavailable`.
 Port 8787, not 8080 — 8080 is taken by another app on the current dev machine.
 
 ```bash
-npm test          # needs the local PostgreSQL on 127.0.0.1:5432 (see below)
+npm test          # self-contained: a stand-in Central User Service, generated data
 npm run typecheck
 npm run build
 ```
 
-## BU head sign-in — password accounts
+## Sign-in — the Central User Service
 
-BU heads are not in Infinity's field structure, so they have accounts of their
-own in `dashboard_accounts` and sign in at `/login/bu-head` with a mobile number
-and password — the D2D portal's staff (password) login:
+Everyone — field force (NSM, ZSM, RM, TM), BU heads and admins — signs in through
+the Central User Service (`CENTRAL_USER_SERVICE_URL`, users.wockregenerative.com),
+the one login service shared by Wockhardt apps. It holds the users (field force
+synced from Infinity's field structure for all 8 sales divisions; staff added on
+its admin page), emails the OTP and issues the session token. This API keeps no
+users of its own.
 
-- bcrypt hashes; 3 wrong passwords lock the account until it is unlocked;
-- a new password is required at first sign-in and every 90 days (8+ characters,
-  upper- and lower-case, a digit, a symbol);
-- "Forgot password" sends a code by email (and SMS, where configured), shown on
-  screen outside production, which unlocks the account and sets a new password;
-- the token that sets a password is good for 15 minutes and one use, and is
-  never accepted as a session;
-- a BU head sees the divisions on the account, as an NSM sees theirs.
+The dashboard is registered there as the client app `CENTRAL_CLIENT_ID`
+(`ibb-insights`), with `CENTRAL_API_KEY`.
 
-Accounts are managed from the command line (there is no admin screen):
+- `POST /api/auth/otp/request` asks the service to email a 6-digit code and
+  returns where it went (masked). The service refuses unknown, inactive or
+  not-allowed accounts, and its message is passed on.
+- `POST /api/auth/otp/verify` returns the service's token (RS256, `aud` =
+  client id) and the person's scope.
+- Every other route except `/health`, `/ready` and `/api/meta/flush` needs
+  `Authorization: Bearer <token>`. The token is checked here with the service's
+  public key (`/.well-known/jwks.json`); the account is confirmed active
+  (`/api/v1/token/introspect`, cached a minute, trusted while the service is
+  unreachable). Both are limited to `AUTH_RATE_LIMIT` requests per IP per 15
+  minutes.
 
-```bash
-npm run account -- add     --name "Name" --mobile 98XXXXXXXX --division 85[,A5] [--email a@b.com] [--empcode 123]
-npm run account -- reset   --mobile 98XXXXXXXX   # new temporary password, unlocks
-npm run account -- unlock  --mobile 98XXXXXXXX
-npm run account -- disable --mobile 98XXXXXXXX   # enable to restore
-npm run account -- update  --mobile 98XXXXXXXX [--name] [--email] [--division]
-npm run account -- list
-```
-
-`add` and `reset` print a temporary password once; the user must replace it at
-first sign-in. Every attempt is recorded in `login_history` with
-`login_method = 'password'`.
-
-## Sign-in — Infinity's field structure
-
-Mobile number + OTP, the D2D portal's TM login flow, for the field force listed
-in Infinity. Everything lives in the PostgreSQL database `sales_dash_user_db`
-(`db/schema.sql`):
-
-| Object | What it is |
-| --- | --- |
-| `infinity_division` | Divisions to pull, with Infinity's id for each. Seeded with `85` and `A5`; add a row per further division. |
-| `field_structure_infinity` | Infinity's field structure, as the D2D portal keeps it. Filled by `npm run infinity:sync`. |
-| `vw_emp_email_mobile`, `vw_tm_hierarchy`, `vw_infinity_users` | The D2D portal's views, unchanged. |
-| `vw_dashboard_users` | One row per person: sign-in mobile, and scope. **Who may sign in.** |
-| `login_otp`, `login_history` | Pending codes (as HMACs) and the audit of every attempt. |
-| `infinity_sync_log` | One row per division per sync. |
-
-`npm run infinity:sync` calls `{INFINITY_REPORT_BASE_URL}/filed-structure/{id}`
-for each division (`-- --division 85` for one). Each division is replaced in one
-transaction; an error, an empty response, or one under half the rows held keeps
-the previous data (`-- --force` accepts a shrink). Run it on a schedule — a new
-joiner can sign in, and a leaver is cut off within a minute, after the next sync.
-
-Scope in `vw_dashboard_users` — someone under several roles gets the broadest:
+Scope (`src/users/sessionUser.ts`), from the service's field hierarchy
+(`/api/v1/hierarchy`, one row per territory):
 
 | Role | Scope |
 | --- | --- |
-| TM | HQ — own SAP code (BZIRK) |
-| RM | Region — own SAP code (VKGRP) |
-| ZSM | Zone — own SAP code (VKBUR) |
-| NSM | Division — `division_code` (SPART) |
+| TM | HQ — their territories' SAP codes |
+| RM | Region — the SAP codes of the regions they manage |
+| ZSM | Zone — the SAP codes of the zones they manage |
+| NSM, BU head, admin | Division — `division_code` |
+| Service admins, `ALL_DIVISION_MOBILES` | Every division |
 
-- `POST /api/auth/otp/request` looks the mobile up in `vw_dashboard_users` and
-  sends a 6-digit code by SMS and email (`SMS_*`, `SMTP_*`). The code expires
-  after `OTP_EXPIRY_MINUTES` and can be re-sent after 30 s. Outside production
-  it is also returned as `devOtp`. A number listed against two people, or a
-  person with no territory, is refused with a reason.
-- `POST /api/auth/otp/verify` allows five wrong guesses per code, uses the code
-  up on success, and returns a session token carrying only the employee code.
-- Both are limited to `AUTH_RATE_LIMIT` requests per IP per 15 minutes.
+Someone with no territory is refused at sign-in with the reason.
 
-Every route except `/health`, `/ready`, `/api/auth/otp/*` and `/api/meta/flush`
-needs `Authorization: Bearer <token>`. Production refuses to start without
-`JWT_SECRET` or without an SMS or email channel.
-
-Tests use a throwaway `sales_dash_user_db_test` on the local PostgreSQL, created
-automatically; nothing in the test suite can reset a database not named `*_test`.
+Tests run against a stand-in service (`src/test/central.ts`) with tokens signed
+by a key made for the run; no database is needed.
 
 ## Endpoints
 

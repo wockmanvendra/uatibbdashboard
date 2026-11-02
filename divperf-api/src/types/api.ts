@@ -23,7 +23,8 @@ export type TabId =
   | 'zone-performance'
   | 'region-performance'
   | 'hq-performance'
-  | 'credit-note';
+  | 'credit-note'
+  | 'stockist-performance';
 
 export type Grain = 'division' | 'brand' | 'zone' | 'region' | 'hq';
 
@@ -90,6 +91,13 @@ export interface TabMeta {
   unassignedRows: number;
   cached: boolean;
   queryMs: number;
+  /** When these figures were read from the warehouse (ISO 8601). */
+  builtAt: string;
+  /**
+   * The source has changed since `builtAt`: these are the previous figures,
+   * served at once while the view is rebuilt. Ask again shortly for the new ones.
+   */
+  refreshing: boolean;
   /**
    * Prior-year window used for Gr%. Null when that window holds no data, in
    * which case every `gr` field in the response is null.
@@ -267,6 +275,52 @@ export interface GeoTablePanel {
   total: GeoRow;
   /** Header chips: "Zones on Tgt (xx)", "Growing (xx)", "Degrowing (xx)". */
   onTargetCount: number;
+  growingCount: number;
+  degrowingCount: number;
+}
+
+/**
+ * The "Stockist" grid — primary (dispatch), collection and secondary per
+ * stockist in the selection, with growth on the same months a year earlier.
+ * The source keeps no target per stockist, so there is no Tgt or Ach%. O/S is
+ * the closing outstanding: the value in the period's last month.
+ */
+export const STOCKIST_COLUMNS = [
+  'stockist',
+  'code',
+  'hq',
+  'hqName',
+  'disp',
+  'dispGrPct',
+  'coll',
+  'collGrPct',
+  'sec',
+  'secGrPct',
+  'os',
+] as const;
+export type StockistColumn = (typeof STOCKIST_COLUMNS)[number];
+export type StockistRow = [
+  stockist: string,
+  code: string,
+  /** The SAP codes of the HQs it has rows under this period: "94CHEN, WTCHEN". */
+  hq: string,
+  /** Those HQs' names, each once: "Chennai". */
+  hqName: string,
+  disp: number | null,
+  dispGrPct: number | null,
+  coll: number | null,
+  collGrPct: number | null,
+  sec: number | null,
+  secGrPct: number | null,
+  os: number | null,
+];
+
+export interface StockistTablePanel {
+  columns: readonly StockistColumn[];
+  /** Largest dispatch first. */
+  rows: StockistRow[];
+  /** Server-computed, never derived in the client. (I3) */
+  total: StockistRow;
   growingCount: number;
   degrowingCount: number;
 }
@@ -452,37 +506,90 @@ export interface EffortPanel {
 }
 
 // ---------------------------------------------------------------------------
-// Missed doctors — GET /api/effort/missed-doctors
+// Hospital coverage & tier mix (RESEARCH)
+// ---------------------------------------------------------------------------
+
+/** One column of the HML table: a tier, or the total. */
+export interface HospitalTierFigures {
+  label: string;
+  /** Hospitals in the master list. */
+  count: number;
+  /** No source yet: visits are not recorded per hospital. */
+  covered: number | null;
+  coveredPct: number | null;
+  missed: number | null;
+}
+
+/** Hospitals covered and missed in a month, from the effort data's per-territory counts. */
+export interface HospitalMonth {
+  yrMn: YrMn;
+  label: string;
+  /** Hospitals on the territories' lists. */
+  total: number | null;
+  covered: number | null;
+  missed: number | null;
+  coveragePct: number | null;
+}
+
+/**
+ * The "Hospital Coverage & Tier Mix" block, from the hospital master list
+ * (Infinity.Hospital_List). Shown for RESEARCH only; null for other views.
+ */
+export interface HospitalPanel {
+  total: HospitalTierFigures;
+  /** Tier I – IV. */
+  tiers: HospitalTierFigures[];
+  /** Hospitals with no tier: in the total, in no tier column. */
+  untiered: number;
+  /** Each month of the period with hospital lists in the effort data. */
+  months: HospitalMonth[];
+}
+
+// ---------------------------------------------------------------------------
+// Detail lists — GET /api/details/:list
 // ---------------------------------------------------------------------------
 
 /**
- * A doctor the TM did not visit in a month (tmVisitCounts = 0). A doctor missed
- * in two months, or listed under two territories, has a row for each.
+ * The lists behind clickable figures, opened in the side panel:
+ *   doctors       visit summary; status all | met | missed (tmVisitCounts = 0)
+ *   leavers       SAP HR exits (division level)
+ *   joiners       SAP HR hires (division level)
+ *   tm-effort     effort data, one row per territory and month
+ *   hq-headcount  budgeted TMs, TMs in place, collection and PCPM per HQ
+ *   hospitals     the hospital master list (RESEARCH)
  */
-export interface MissedDoctorRow {
-  month: YrMn;
-  zone: string | null;
-  region: string | null;
-  hq: string | null;
-  hqCode: string | null;
-  /** The TM on the territory; null when it is vacant. */
-  tmName: string | null;
-  tmCode: string | null;
-  doctorCode: string | null;
-  doctorName: string | null;
-  speciality: string | null;
-  category: string | null;
-  /** The RM's and ZSM's visits to the doctor that month. */
-  rmVisits: number | null;
-  zsmVisits: number | null;
+export type DetailListId = 'doctors' | 'leavers' | 'joiners' | 'tm-effort' | 'hq-headcount' | 'hospitals';
+
+/** How a column's values are shown: money in lakhs, months as Mon-YY, dates as DD-Mon-YYYY. */
+export type DetailFormat = 'text' | 'number' | 'decimal' | 'percent' | 'money' | 'month' | 'date';
+
+export interface DetailColumn {
+  key: string;
+  label: string;
+  format: DetailFormat;
 }
 
-export interface MissedDoctorsResponse {
-  /** Rows matching the filters, search and category — every page together. */
+/** A group of filter chips; the chosen value goes back as the query parameter `key`. */
+export interface DetailFacet {
+  key: string;
+  label: string;
+  /** The first option is the default. */
+  options: { value: string; label: string }[];
+}
+
+export interface DetailListResponse {
+  title: string;
+  columns: DetailColumn[];
+  facets: DetailFacet[];
+  rows: Record<string, string | number | null>[];
+  /** Rows matching the filters, search and facets — every page together. */
   total: number;
   page: number;
   pageSize: number;
-  rows: MissedDoctorRow[];
+  /** A caveat shown above the list. */
+  note?: string;
+  /** Why this view cannot show the list; the rows are then empty. */
+  unavailable?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -504,7 +611,9 @@ export type PanelId =
   | 'cnDetail'
   | 'manpower'
   | 'rx'
-  | 'effort';
+  | 'effort'
+  | 'hospitals'
+  | 'stockistTable';
 
 /**
  * One request per tab, every panel in one object. (I2)
@@ -528,25 +637,31 @@ export interface TabResponse {
   rx?: RxPanel;
   /** Null when the tab has the panel but this view cannot fill it — see meta.unavailable. */
   effort?: EffortPanel | null;
+  /** Null when the view is not RESEARCH: the section is not shown. */
+  hospitals?: HospitalPanel | null;
+  stockistTable?: StockistTablePanel;
 }
 
 // ---------------------------------------------------------------------------
-// Auth — mobile number + one-time password
+// Auth — mobile number + one-time password, through the Central User Service
 // ---------------------------------------------------------------------------
 
-/** A display label only: what a user sees is their scope. (§6.1) */
-/** Field force, signing in by OTP; and bu-head, signing in by password. */
-export type UserRole = 'tm' | 'rm' | 'zsm' | 'nsm' | 'bu-head';
+/**
+ * A display label only: what a user sees is their scope. (§6.1) Field force
+ * (tm…nsm) and division staff (bu-head, admin), all from the Central User
+ * Service.
+ */
+export type UserRole = 'tm' | 'rm' | 'zsm' | 'nsm' | 'bu-head' | 'admin';
 
 export interface OtpRequestBody {
   mobile: string;
 }
 
 export interface OtpRequestResponse {
+  /** Where the code was emailed, masked — e.g. "r***@wockhardt.com". */
+  sentTo: string;
   expiresInSeconds: number;
   resendInSeconds: number;
-  /** Outside production only; the login screen shows it, for testing. */
-  devOtp?: string;
 }
 
 export interface OtpVerifyBody {
@@ -563,53 +678,10 @@ export interface SessionUser {
   effectiveScope: EffectiveScope;
 }
 
+/** `token` is the Central User Service's session token, sent back as "Bearer". */
 export interface LoginResponse {
   token: string;
   user: SessionUser;
-}
-
-/**
- * Password sign-in for BU heads (as the D2D portal's staff login). Passwords:
- * at least 8 characters, with an upper- and lower-case letter, a digit and a
- * symbol; three wrong ones lock the account until an administrator unlocks it.
- */
-export interface PasswordLoginBody {
-  mobile: string;
-  password: string;
-}
-
-/**
- * A session — or, at first sign-in and when the password is 90 days old, a
- * short-lived token that can only set a new password.
- */
-export type PasswordLoginResponse = LoginResponse | { mustChangePassword: true; changeToken: string };
-
-export interface ChangePasswordBody {
-  changeToken: string;
-  newPassword: string;
-}
-
-/** Forgot password: a code by email (and SMS, where configured). */
-export interface ForgotPasswordBody {
-  mobile: string;
-}
-
-export interface ForgotPasswordResponse {
-  /** Where the code went, masked — e.g. "r***@wockhardt.com". */
-  sentTo: string;
-  expiresInSeconds: number;
-  resendInSeconds: number;
-  /** Outside production only; the screen shows it, for testing. */
-  devOtp?: string;
-}
-
-export interface ForgotPasswordVerifyBody {
-  mobile: string;
-  otp: string;
-}
-
-export interface ForgotPasswordVerifyResponse {
-  changeToken: string;
 }
 
 // ---------------------------------------------------------------------------

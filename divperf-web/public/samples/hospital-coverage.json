@@ -1,0 +1,17 @@
+{
+  "_about": "SAMPLE DATA for the Hospital Coverage charts, shown only while no hospital visits are recorded in the source. Edit the numbers freely; delete this file to hide the sample.",
+  "months": [
+    { "month": "Apr-26", "covered": 1105, "missed": 268 },
+    { "month": "May-26", "covered": 1189, "missed": 260 },
+    { "month": "Jun-26", "covered": 1131, "missed": 318 },
+    { "month": "Jul-26", "covered": 1246, "missed": 203 },
+    { "month": "Aug-26", "covered": 1219, "missed": 229 },
+    { "month": "Sep-26", "covered": 1262, "missed": 187 }
+  ],
+  "tiers": [
+    { "tier": "Tier I", "coveragePct": 90 },
+    { "tier": "Tier II", "coveragePct": 85 },
+    { "tier": "Tier III", "coveragePct": 80 },
+    { "tier": "Tier IV", "coveragePct": 70 }
+  ]
+}

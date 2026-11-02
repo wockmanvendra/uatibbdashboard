@@ -33,17 +33,28 @@ export class RedisCache implements CacheClient {
     await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
   }
 
+  async setIfAbsent<T>(key: string, value: T, ttlSeconds: number): Promise<boolean> {
+    return (await this.redis.set(key, JSON.stringify(value), 'EX', ttlSeconds, 'NX')) === 'OK';
+  }
+
   /**
    * SCAN rather than KEYS: KEYS blocks the server for the whole keyspace scan,
    * which on a shared cache is a production incident.
    */
-  async delByPrefix(prefix: string): Promise<void> {
+  async keysByPrefix(prefix: string): Promise<string[]> {
+    const out: string[] = [];
     let cursor = '0';
     do {
       const [next, keys] = await this.redis.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 500);
       cursor = next;
-      if (keys.length) await this.redis.unlink(...keys);
+      out.push(...keys);
     } while (cursor !== '0');
+    return out;
+  }
+
+  async delByPrefix(prefix: string): Promise<void> {
+    const keys = await this.keysByPrefix(prefix);
+    for (let i = 0; i < keys.length; i += 500) await this.redis.unlink(...keys.slice(i, i + 500));
   }
 
   async close(): Promise<void> {

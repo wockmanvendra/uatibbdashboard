@@ -7,9 +7,10 @@
  * an em dash, which is the honest answer. (§7.5)
  */
 import type {
-  CreditNotePanel, EffortPanel, GeoRow, KeyBrandRow, MixPanel, RxPanel, TabResponse, TrendsPanel,
+  CreditNotePanel, EffortPanel, GeoRow, HospitalPanel, KeyBrandRow, MixPanel, RxPanel, StockistRow,
+  StockistTablePanel, TabResponse, TrendsPanel,
 } from '../types/api.js';
-import { CN_DETAIL_COLUMNS, GEO_COLUMNS, KEY_BRAND_COLUMNS } from '../types/api.js';
+import { CN_DETAIL_COLUMNS, GEO_COLUMNS, KEY_BRAND_COLUMNS, STOCKIST_COLUMNS } from '../types/api.js';
 import type { TabConfig } from '../tabs/registry.js';
 import type { Scope } from '../plugins/scope.js';
 import type { Db } from '../data/db.js';
@@ -27,7 +28,9 @@ import type { DataVersion } from './versionService.js';
 import { fetchManpower, manpowerScope, type ManpowerResult, type ManpowerScope } from '../data/panels/manpower.js';
 import { effortScope, fetchEffort, type EffortScope } from '../data/panels/effort.js';
 import { fetchMissedSummary, type MissedSummary } from '../data/panels/missedDoctors.js';
+import { fetchHospitals, hospitalDivisions } from '../data/panels/hospitals.js';
 import { fetchHeadcount, type Headcount, type HeadcountGrain } from '../data/panels/headcount.js';
+import { fetchStockists, type StockistFigures } from '../data/panels/stockists.js';
 import { config } from '../config.js';
 import * as M from '../lib/metrics.js';
 import { label, monthCount, priorYear } from '../lib/yrmn.js';
@@ -66,6 +69,8 @@ const REASONS = {
     from === null || to === null
       ? 'The effort data has no months yet.'
       : `The effort data covers ${from === to ? label(from) : `${label(from)} – ${label(to)}`} only, so there is none for the selected period.`,
+  hospitalCoverage:
+    'The hospital master list records no visits, and the effort data no hospital visits yet, so hospitals covered and missed are left blank.',
   effortNoSource:
     'The effort data has no count of doctors met or missed at the right frequency, or of A+ doctors, so those are left blank.',
   rcpaPlan:
@@ -111,6 +116,8 @@ interface Coverage {
   /** Months of the period with effort data, and the source's whole effort span. */
   effortMonths: number;
   effortSource: { from: number | null; to: number | null };
+  /** The hospital section is shown, and visits are not recorded for it. */
+  hospitalsWithoutVisits: boolean;
 }
 
 function unavailableFor(tab: TabConfig, c: Coverage): TabResponse['meta']['unavailable'] {
@@ -143,6 +150,7 @@ function unavailableFor(tab: TabConfig, c: Coverage): TabResponse['meta']['unava
       add('effort.noSource', 'A+, Drs Met with Rt Frq, Missed with Rt Frq', REASONS.effortNoSource);
     }
   }
+  if (has('hospitals') && c.hospitalsWithoutVisits) add('hospitals.coverage', 'Hospitals covered and missed', REASONS.hospitalCoverage);
   if (has('manpower')) {
     const m = c.manpower;
     if (!m.ok) {
@@ -187,11 +195,13 @@ export async function buildLiveTab(
   const noCnMonths: CnByMonth = { total: NO_CN, byMonth: new Map() };
   const people = manpowerScope(scope, filters, config.HR_DIVISION_COST_CENTRES);
   const effortView = effortScope(scope, filters, config.EFFORT_DIVISIONS);
+  // Hospitals: RESEARCH only — the view must include a division with a hospital list.
+  const hospitalDivs = has('hospitals') ? hospitalDivisions(scope, filters, config.HOSPITAL_DIVISIONS) : [];
   // Headcount per node only where a grid shows a PCPM column.
   const headcountGrain: HeadcountGrain | null =
     has('geoTable') && tab.grain !== 'brand' ? (tab.grain as HeadcountGrain) : null;
 
-  const [totals, trend, breakdown, mix, brandTotals, cnMonths, cnNodes, cnDetail, manpower, headcount, effort, missed] = await Promise.all([
+  const [totals, trend, breakdown, mix, brandTotals, cnMonths, cnNodes, cnDetail, manpower, headcount, effort, missed, hospitals, stockists] = await Promise.all([
     fetchTotals(db, scope, filters),
     tab.panels.includes('trends')
       ? fetchTrend(db, scope, filters)
@@ -229,6 +239,12 @@ export async function buildLiveTab(
     has('effort') && effortView.ok
       ? fetchMissedSummary(db, scope, filters)
       : Promise.resolve<MissedSummary | null>(null),
+    // The hospital master list, and hospital visits from the effort data.
+    hospitalDivs.length
+      ? fetchHospitals(db, scope, filters, hospitalDivs, config.EFFORT_DIVISIONS)
+      : Promise.resolve<HospitalPanel | null>(null),
+    // Stockist-wise sales from the sales table's stockist columns.
+    has('stockistTable') ? fetchStockists(db, scope, filters) : Promise.resolve<StockistFigures[]>([]),
   ]);
 
   const cur = totals.cur;
@@ -256,6 +272,8 @@ export async function buildLiveTab(
       unassignedRows: totals.unassignedRows,
       cached: false,
       queryMs: 0,
+      builtAt: new Date().toISOString(),
+      refreshing: false,
       priorFrom: hasPriorSales ? priorYear(filters.from) : null,
       priorTo: hasPriorSales ? priorYear(filters.to) : null,
       cnPctFrom: pctMonths?.from ?? null,
@@ -271,6 +289,7 @@ export async function buildLiveTab(
         effort: effortView,
         effortMonths: effort?.months.length ?? 0,
         effortSource: { from: version.effortFrom, to: version.effortTo },
+        hospitalsWithoutVisits: !!hospitals && !hospitals.months.some((m) => m.covered !== null),
         rcpaAsOf: cur?.rcpaAsOf ?? null,
         to: filters.to,
         geoNarrowed,
@@ -383,6 +402,14 @@ export async function buildLiveTab(
     res.effort = effort && withMissed(effort, missed);
   }
 
+  if (has('stockistTable')) {
+    res.stockistTable = stockistTable(stockists, cur, prior);
+  }
+
+  if (has('hospitals')) {
+    res.hospitals = hospitals;
+  }
+
   if (has('cnDetail')) {
     res.cnDetail = { columns: CN_DETAIL_COLUMNS, ...cnDetail };
   }
@@ -441,6 +468,32 @@ function rxPanel(cur: Totals | null, prior: Totals | null): RxPanel {
     from: cur?.rxFrom ?? null,
     to: cur?.rxTo ?? null,
   };
+}
+
+function stockistTable(stockists: StockistFigures[], cur: Totals | null, prior: Totals | null): StockistTablePanel {
+  let growing = 0;
+  let degrowing = 0;
+  const rows = stockists.map((s): StockistRow => {
+    const dispGr = M.grPct(s.disp, s.priorDisp);
+    if (dispGr !== null && dispGr > 0) growing++;
+    if (dispGr !== null && dispGr < 0) degrowing++;
+    return [
+      s.name, s.code, s.hq, s.hqName,
+      s.disp, dispGr,
+      s.coll, M.grPct(s.coll, s.priorColl),
+      s.sec, M.grPct(s.sec, s.priorSec),
+      s.os,
+    ];
+  });
+  // The Total is the period's totals: rows without a stockist carry only target. (I3)
+  const total: StockistRow = [
+    'Total', '', '', '',
+    cur?.disp ?? null, M.grPct(cur?.disp ?? null, prior?.disp ?? null),
+    cur?.coll ?? null, M.grPct(cur?.coll ?? null, prior?.coll ?? null),
+    cur?.sec ?? null, M.grPct(cur?.sec ?? null, prior?.sec ?? null),
+    cur?.os ?? null,
+  ];
+  return { columns: STOCKIST_COLUMNS, rows, total, growingCount: growing, degrowingCount: degrowing };
 }
 
 function keyBrandRow(n: NodeBreakdown): KeyBrandRow {

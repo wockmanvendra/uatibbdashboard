@@ -2,10 +2,10 @@ import { LRUCache } from 'lru-cache';
 import type { CacheClient } from './CacheClient.js';
 
 /**
- * Phase 2 cache. Correct for a single instance only — once more than one App
- * Service instance is running, in-process caches diverge and users see
- * different numbers depending on which instance answered. Swap for RedisCache
- * at Phase 3. (I10)
+ * The cache inside the API process. Right for a single instance — the
+ * deployments run one — and emptied by a restart, after which the warmer
+ * rebuilds the senior users' views. With more than one instance, each would
+ * hold its own copy: switch to RedisCache then. (I10)
  */
 export class MemoryCache implements CacheClient {
   private readonly lru: LRUCache<string, { v: unknown; exp: number }>;
@@ -26,6 +26,22 @@ export class MemoryCache implements CacheClient {
 
   async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
     this.lru.set(key, { v: value, exp: Date.now() + ttlSeconds * 1000 });
+  }
+
+  async setIfAbsent<T>(key: string, value: T, ttlSeconds: number): Promise<boolean> {
+    if ((await this.get(key)) !== null) return false;
+    await this.set(key, value, ttlSeconds);
+    return true;
+  }
+
+  async keysByPrefix(prefix: string): Promise<string[]> {
+    const now = Date.now();
+    const out: string[] = [];
+    // peek: listing must not count as use, or the LRU order means nothing.
+    for (const k of this.lru.keys()) {
+      if (k.startsWith(prefix) && (this.lru.peek(k)?.exp ?? 0) > now) out.push(k);
+    }
+    return out;
   }
 
   async delByPrefix(prefix: string): Promise<void> {

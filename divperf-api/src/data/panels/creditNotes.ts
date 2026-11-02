@@ -17,7 +17,7 @@
 import type { Db, SqlParams } from '../db.js';
 import {
   CN_ALIAS, CN_COLUMN, CN_SOURCE, cnMeasureSelect, DATE_KEY, DIMENSION, MEASURES, PRODUCT_KEY,
-  SOURCE, TERRITORY_ALIAS, TERRITORY_JOIN, UNASSIGNED, code, num, type CnMeasureRow,
+  SOURCE, TERRITORY_ALIAS, TERRITORY_JOIN, UNASSIGNED, code, divisionCode, num, type CnMeasureRow,
 } from '../sqlFragments.js';
 import { buildPredicate, CN_MATCH, type PanelFilters } from '../queryBuilder.js';
 import type { Scope } from '../../plugins/scope.js';
@@ -84,7 +84,7 @@ function cnQuery(
   // divisions with no sales rows at all: no division filter could reach them,
   // and their CN% would have no gross sales to divide by.
   if (!p.constrained.includes('division')) {
-    where += `\n    AND ${code(CN_COLUMN.division)} IN (SELECT DISTINCT ${code(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
+    where += `\n    AND ${divisionCode(CN_COLUMN.division)} IN (SELECT DISTINCT ${divisionCode(DIMENSION.division.codeCol)} FROM ${SOURCE})`;
   }
 
   return {
@@ -135,7 +135,7 @@ export type CnGrain = 'division' | 'zone' | 'region' | 'hq';
 
 /** The node each grain groups on, and where its display name comes from. */
 const NODE: Record<CnGrain, { code: string; name: string; territory: boolean }> = {
-  division: { code: code(CN_COLUMN.division), name: 'NULL', territory: false },
+  division: { code: divisionCode(CN_COLUMN.division), name: 'NULL', territory: false },
   zone: { code: `${T}.zone_code`, name: `${T}.zone_name`, territory: true },
   region: { code: `${T}.region_code`, name: `${T}.region_name`, territory: true },
   hq: { code: code(CN_COLUMN.hq), name: `${T}.hq_name`, territory: true },

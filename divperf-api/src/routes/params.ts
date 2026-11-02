@@ -3,6 +3,7 @@
  * the period and the hierarchy selections.
  */
 import { z } from 'zod';
+import { canonicalDivisionCode } from '../config.js';
 import { badRequest } from '../lib/errors.js';
 import { isValidYrMn, monthCount } from '../lib/yrmn.js';
 
@@ -18,11 +19,14 @@ export const list = z
     return [...new Set(raw.flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean))];
   });
 
+/** Division codes; an alias (84) means its division (02), so old links still work. */
+export const divisionList = list.transform((codes) => [...new Set(codes.map(canonicalDivisionCode))]);
+
 /** The period and the filter selections. */
 export const filterQuery = z.object({
   from: z.coerce.number().int(),
   to: z.coerce.number().int(),
-  division: list,
+  division: divisionList,
   brand: list,
   zone: list,
   region: list,

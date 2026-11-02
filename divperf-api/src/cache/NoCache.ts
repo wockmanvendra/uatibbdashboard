@@ -12,6 +12,14 @@ export class NoCache implements CacheClient {
 
   async set(): Promise<void> {}
 
+  async setIfAbsent(): Promise<boolean> {
+    return true;
+  }
+
+  async keysByPrefix(): Promise<string[]> {
+    return [];
+  }
+
   async delByPrefix(): Promise<void> {}
 
   async close(): Promise<void> {}
