@@ -9,6 +9,8 @@
  * service's public key, confirms the account is still active, and works out
  * what the person may see from the service's field hierarchy
  * (users/sessionUser.ts) — never from anything the browser sends. (§6.2 rule 2)
+ * The browser only picks which of the token's roles to view as (X-Dashboard-Role);
+ * a role the token does not list is ignored.
  * The result is cached a minute per token, so a deactivation or a move in the
  * field structure takes effect within that.
  */
@@ -55,13 +57,17 @@ const plugin: FastifyPluginAsync = async (app) => {
 
     // Responses differ per user, so a browser cache must never hand one
     // user's cached tab to the next person who signs in on the same machine.
-    reply.header('vary', 'Authorization');
+    reply.header('vary', 'Authorization, X-Dashboard-Role');
 
     const header = req.headers.authorization ?? '';
     if (!header.startsWith('Bearer ')) throw unauthorized('Sign in to view the dashboard.');
     const token = header.slice(7).trim();
 
-    let user = sessions.get(token);
+    const asked = req.headers['x-dashboard-role'];
+    const roleKey = typeof asked === 'string' && asked.length <= 80 ? asked.trim() : null;
+    const sessionKey = `${token}|${roleKey ?? ''}`;
+
+    let user = sessions.get(sessionKey);
     if (!user) {
       let claims;
       try {
@@ -73,8 +79,8 @@ const plugin: FastifyPluginAsync = async (app) => {
       if (!(await stillActive(token))) {
         throw unauthorized('Your account no longer has dashboard access. Contact your administrator.');
       }
-      user = await sessionUser(claims);
-      sessions.set(token, user);
+      user = await sessionUser(claims, roleKey);
+      sessions.set(sessionKey, user);
     }
     if (!hasTerritory(user)) throw scopeEmpty(NO_TERRITORY);
     req.appUser = user;

@@ -32,6 +32,7 @@ export interface NodeBreakdown {
   /** Same measures for the prior-year window; null when it holds no data. */
   priorDisp: number | null;
   priorColl: number | null;
+  priorCollMat: number | null;
 }
 
 /**
@@ -82,6 +83,7 @@ export async function fetchBreakdown(
       rcpa: num(c.rcpa),
       priorDisp: entry.prior ? num(entry.prior.disp) : null,
       priorColl: entry.prior ? num(entry.prior.coll) : null,
+      priorCollMat: entry.prior ? num(entry.prior.coll_mat) : null,
     });
   }
 

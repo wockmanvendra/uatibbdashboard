@@ -9,7 +9,12 @@
  * collection, outstanding, stock, secondary and RCPA, by division / zone /
  * region / HQ / brand / month.
  *
- *   Tgt   = BUDGET1                 BUDGET is zero throughout
+ *   Tgt   = BUDGET1                 the field budget: rupees, per HQ and brand.
+ *                                   Every target and Ach% is on it
+ *   Div Tgt = BUDGET × 1 lakh       the division budget, shown beside it: stored
+ *                                   in lakhs on one row per division and month,
+ *                                   with no zone, HQ or brand — any such filter
+ *                                   leaves it out
  *   Disp  = NET_SALES
  *   Coll  = -COLLECTION             stored as a credit: almost every row is negative
  *   Brand Coll = -COLLECTION_MATERIAL  collection split by product, on rows that
@@ -59,6 +64,7 @@ export const DATE_KEY = `CAST(${MONTH_COL} AS INT)`;
 export const UNASSIGNED = 'Unassigned';
 
 const DEC = 'DECIMAL(38,6)';
+const LAKH = 100000;
 
 /** Normalises a hierarchy code: trims, folds blank to null. */
 export const code = (col: string) => `NULLIF(LTRIM(RTRIM(${col})), '')`;
@@ -102,6 +108,7 @@ const sum = (col: string) => `SUM(CAST(${col} AS ${DEC}))`;
 /** Additive measures — monthly flows. Ratios are never stored and never summed. (I4) */
 export const MEASURES = {
   tgt: whenPresent(sum('BUDGET1'), 'BUDGET1'),
+  divTgt: whenPresent(`${sum('BUDGET')} * ${LAKH}`, 'BUDGET'),
   disp: whenPresent(sum('NET_SALES'), 'NET_SALES'),
   gross: whenPresent(sum('GROSS_SALES'), 'GROSS_SALES'),
   coll: whenPresent(`-${sum('COLLECTION')}`, 'COLLECTION'),
@@ -124,6 +131,7 @@ const R = (e: string) => `CAST(${e} AS DECIMAL(38,2))`;
  */
 export const MEASURE_SELECT = [
   `${R(MEASURES.tgt)} AS tgt`,
+  `${R(MEASURES.divTgt)} AS div_tgt`,
   `${R(MEASURES.disp)} AS disp`,
   `${R(MEASURES.gross)} AS gross`,
   `${R(MEASURES.coll)} AS coll`,
@@ -139,6 +147,7 @@ export const MEASURE_SELECT = [
 /** The shape every panel query returns for its measures. */
 export interface MeasureRow {
   tgt: string | number | null;
+  div_tgt: string | number | null;
   disp: string | number | null;
   gross: string | number | null;
   coll: string | number | null;

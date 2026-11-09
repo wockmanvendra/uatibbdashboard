@@ -14,11 +14,14 @@
  * codes come from the service's hierarchy, one row per territory; the token's
  * own sap_code is the fallback. Mobiles in ALL_DIVISION_MOBILES, and the
  * service's own admins, see every division.
+ *
+ * A person may hold several roles (the token's `roles`): the session is in one of them, the
+ * one the browser asks for (X-Dashboard-Role) if the token lists it, else the first.
  */
 import type { ScopeLevel, UserRole } from '../types/api.js';
 import { canonicalDivisionCode, config } from '../config.js';
 import { forbidden } from '../lib/errors.js';
-import { hierarchy, type CentralUser, type HierarchyRow } from '../services/centralAuth.js';
+import { hierarchy, type CentralRole, type CentralUser, type HierarchyRow } from '../services/centralAuth.js';
 
 export interface UserRecord {
   /** The service's user id (the token's `sub`). */
@@ -31,6 +34,19 @@ export interface UserRecord {
   scopeNodes: string[];
   /** The person's own division code(s). */
   divisions: string[];
+  /** Every role the person may view the dashboard as; one only for an all-divisions user. */
+  roles: RoleOption[];
+  /** The role this session is in. */
+  roleKey: string;
+}
+
+export interface RoleOption {
+  key: string;
+  role: UserRole;
+  division: string | null;
+  divisionName: string | null;
+  /** The role shows every division: the main role of a service admin or a listed mobile. */
+  allDivisions: boolean;
 }
 
 export const NO_TERRITORY =
@@ -61,14 +77,38 @@ const clean = (v: string | null | undefined) => {
 const codes = (v: string | null | undefined): string[] =>
   (v ?? '').split(',').map(clean).filter((c): c is string => c !== null);
 
-export async function sessionUser(u: CentralUser): Promise<UserRecord> {
-  if (!(ROLES as readonly string[]).includes(u.usertype)) {
+/** The person's roles this dashboard serves: the token's `roles`, or its own (an older service). */
+export function rolesOf(u: CentralUser): CentralRole[] {
+  const listed: CentralRole[] = u.roles?.length
+    ? u.roles
+    : [{ key: `${u.usertype}:${u.division_code ?? ''}`, usertype: u.usertype, division_code: u.division_code, division_name: u.division_name ?? null, sap_code: u.sap_code ?? null }];
+  return listed.filter((r) => (ROLES as readonly string[]).includes(r.usertype));
+}
+
+const optionOf = (r: CentralRole, allDivisions: boolean): RoleOption => ({
+  key: r.key,
+  role: r.usertype as UserRole,
+  division: clean(r.division_code),
+  divisionName: r.division_name ?? null,
+  allDivisions,
+});
+
+/** The session for one of the person's roles: `roleKey` when the token lists it, else the first. */
+export async function sessionUser(u: CentralUser, roleKey?: string | null): Promise<UserRecord> {
+  const roles = rolesOf(u);
+  const active = roles.find((r) => r.key === roleKey) ?? roles[0];
+  if (!active) {
     throw forbidden('Your account type cannot use this dashboard. Contact your administrator.');
   }
-  const role = u.usertype as UserRole;
+  const role = active.usertype as UserRole;
+  // Service admins and listed mobiles see every division on their main role; an extra role
+  // is that role's own view, so an admin can see what that TM or RM sees.
+  const seesAll = config.ALL_DIVISION_MOBILES.has(u.mobileno.trim()) || u.is_service_admin === true;
+  const mainKey = (roles.find((r) => r.main) ?? roles[0])!.key;
+  const allOn = (r: CentralRole) => seesAll && r.key === mainKey;
   // The service's division code, which its hierarchy is read with; the scope
   // uses the dashboard's (RESEARCH's 84 is 02 — config DIVISION_ALIASES).
-  const serviceDivision = clean(u.division_code);
+  const serviceDivision = clean(active.division_code);
   const division = serviceDivision && canonicalDivisionCode(serviceDivision);
   const base = {
     id: u.sub,
@@ -77,9 +117,11 @@ export async function sessionUser(u: CentralUser): Promise<UserRecord> {
     mobileno: u.mobileno,
     email: u.email,
     divisions: division ? [division] : [],
+    roles: roles.map((r) => optionOf(r, allOn(r))),
+    roleKey: active.key,
   };
 
-  if (config.ALL_DIVISION_MOBILES.has(u.mobileno.trim()) || u.is_service_admin === true) {
+  if (allOn(active)) {
     return { ...base, scopeLevel: 'ALL', scopeNodes: [], divisions: [] };
   }
 
@@ -100,6 +142,6 @@ export async function sessionUser(u: CentralUser): Promise<UserRecord> {
       ),
     ].sort();
   }
-  if (!nodes.length) nodes = [...new Set(codes(u.sap_code))].sort();
+  if (!nodes.length) nodes = [...new Set(codes(active.sap_code))].sort();
   return { ...base, scopeLevel: field.level, scopeNodes: nodes };
 }

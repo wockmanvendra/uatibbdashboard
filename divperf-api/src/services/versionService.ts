@@ -18,7 +18,8 @@ import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { getDb } from '../data/db.js';
 import {
-  BUDGET_TM_SOURCE, CN_SOURCE, DATE_KEY, EFFORT_SOURCE, EMP_COUNT_SOURCE, HR_EXIT_SOURCE, HR_HIRING_SOURCE, SOURCE,
+  BUDGET_TM_SOURCE, CN_SOURCE, DATE_KEY, EFFORT_SOURCE, EMP_COUNT_SOURCE, HOSPITAL_SOURCE, HR_EXIT_SOURCE,
+  HR_HIRING_SOURCE, SOURCE, VISIT_SOURCE,
 } from '../data/sqlFragments.js';
 import { AVAILABLE_MONTHS, DATA_VERSION, OPEN_YR_MN } from './mockData.js';
 
@@ -99,8 +100,12 @@ async function load(): Promise<DataVersion> {
     effort_to: number | string | null;
     budget_tm: number | string | null;
     emp_count: number | string | null;
+    hosp_rows: number | string | null;
+    hosp_tiered: number | string | null;
+    visit_rows: number | string | null;
+    tm_visits: number | string | null;
   }>(
-    `SELECT s.*, c.*, e.*, h.*, ef.*, bt.*, ec.*
+    `SELECT s.*, c.*, e.*, h.*, ef.*, bt.*, ec.*, hl.*, vs.*
        FROM (SELECT MAX(${DATE_KEY}) AS open_yr_mn, COUNT_BIG(*) AS n_rows,
                     SUM(CAST(NET_SALES AS DECIMAL(38,2))) AS net, SUM(CAST(secondary AS DECIMAL(38,2))) AS sec,
                     MIN(CASE WHEN GROSS_SALES <> 0 THEN ${DATE_KEY} END) AS sales_from,
@@ -119,7 +124,11 @@ async function load(): Promise<DataVersion> {
                          MAX(TRY_CAST(LEFT(effortdate, 6) AS INT)) AS effort_to
                     FROM ${EFFORT_SOURCE}) ef
       CROSS JOIN (SELECT SUM(CAST(no_of_tm AS INT)) AS budget_tm FROM ${BUDGET_TM_SOURCE}) bt
-      CROSS JOIN (SELECT SUM(CAST(emp_count AS INT)) AS emp_count FROM ${EMP_COUNT_SOURCE}) ec`,
+      CROSS JOIN (SELECT SUM(CAST(emp_count AS INT)) AS emp_count FROM ${EMP_COUNT_SOURCE}) ec
+      CROSS JOIN (SELECT COUNT_BIG(*) AS hosp_rows, COUNT(NULLIF(LTRIM(RTRIM(tierName)), '')) AS hosp_tiered
+                    FROM ${HOSPITAL_SOURCE}) hl
+      CROSS JOIN (SELECT COUNT_BIG(*) AS visit_rows, SUM(CAST(tmVisitCounts AS BIGINT)) AS tm_visits
+                    FROM ${VISIT_SOURCE}) vs`,
   );
 
   const openYrMn = Number(row?.open_yr_mn ?? 0);
@@ -127,7 +136,8 @@ async function load(): Promise<DataVersion> {
     .update(
       [openYrMn, row?.n_rows, row?.net, row?.sec, row?.cn_month, row?.cn_rows, row?.cn,
         row?.exits, row?.last_exit, row?.hires, row?.last_hire,
-        row?.effort_rows, row?.effort_from, row?.effort_to, row?.budget_tm, row?.emp_count].join('|'),
+        row?.effort_rows, row?.effort_from, row?.effort_to, row?.budget_tm, row?.emp_count,
+        row?.hosp_rows, row?.hosp_tiered, row?.visit_rows, row?.tm_visits].join('|'),
     )
     .digest('hex')
     .slice(0, 10);

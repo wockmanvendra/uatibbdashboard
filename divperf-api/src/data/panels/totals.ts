@@ -22,7 +22,10 @@ type Row = MeasureRow & BalanceRow & WindowedRow & {
 };
 
 export interface Totals {
+  /** The field budget (BUDGET1). */
   tgt: number | null;
+  /** The division budget (BUDGET): none for a zone, region, HQ or brand. */
+  divTgt: number | null;
   disp: number | null;
   gross: number | null;
   coll: number | null;
@@ -57,6 +60,7 @@ const toTotals = (r: Row | null): Totals | null =>
     ? null
     : {
         tgt: num(r.tgt),
+        divTgt: num(r.div_tgt),
         disp: num(r.disp),
         gross: num(r.gross),
         coll: num(r.coll),

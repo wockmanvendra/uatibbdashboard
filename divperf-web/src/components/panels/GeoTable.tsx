@@ -1,7 +1,7 @@
 /**
  * The Excel "Zonal / Regional / HQ Performance" grid.
  *
- * Columns: <grain> | Tgt | Disp | Disp Gr% | Coll | Ach% on Coll | Coll Gr% |
+ * Columns: <grain> | Tgt | Disp | Ach% on Disp | Disp Gr% | Coll | Ach% on Coll | Coll Gr% |
  *          PCPM (Coll) | Credit Note | CN% | Sec | Inventory Value | RCPA |
  *          RCPA as % to Sec
  *
@@ -36,6 +36,7 @@ function columnsFor(grain: GeoTablePanel['grain']): ColumnSpec[] {
     { index: 0, label: GRAIN_LABEL[grain], format: 'text', sticky: true },
     { index: 1, label: 'Tgt', format: 'money' },
     { index: 2, label: 'Disp', format: 'money' },
+    { index: 14, label: 'Ach% on Disp', format: 'ach' },
     { index: 3, label: 'Disp Gr%', format: 'growth' },
     { index: 4, label: 'Coll', format: 'money' },
     { index: 5, label: 'Ach% on Coll', format: 'ach' },

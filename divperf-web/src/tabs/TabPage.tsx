@@ -133,12 +133,16 @@ export function TabPage() {
         'Total',
         data.primary.target.value,
         data.primary.dispatch.value,
-        null,
-        null,
         data.primary.dispatch.gr,
+        null,
+        null,
+        null,
+        null,
+        null,
         data.secondary?.value ?? null,
         data.inventory?.value ?? null,
         data.rcpa?.actual ?? null,
+        null,
       ]
     : undefined);
 
@@ -257,11 +261,6 @@ export function TabPage() {
             {has('hospitals') && data?.hospitals && (
               <>
                 <SectionBar title="Hospital Coverage & Tier Mix" />
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <HospitalCoverageChart data={data.hospitals} reason={reasonFor(data, 'hospitals.coverage')} stale={stale} />
-                  <HmlTierPie data={data.hospitals} stale={stale} />
-                  <TierCoverageChart data={data.hospitals} stale={stale} />
-                </div>
                 <HmlTable
                   data={data.hospitals}
                   loading={false}
@@ -269,6 +268,11 @@ export function TabPage() {
                   note={reasonFor(data, 'hospitals.coverage')}
                   onOpen={openDetail}
                 />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <HospitalCoverageChart data={data.hospitals} reason={reasonFor(data, 'hospitals.coverage')} stale={stale} />
+                  <HmlTierPie data={data.hospitals} stale={stale} />
+                  <TierCoverageChart data={data.hospitals} stale={stale} />
+                </div>
                 <SectionBar title="Effort Trends" />
               </>
             )}
@@ -396,7 +400,8 @@ export function TabPage() {
                         height={CHART_HEIGHT.wide}
                         trend
                         bars={[
-                          { name: 'Tgt', data: trends.tgt ?? [], color: XL.blue },
+                          { name: hasSeries(trends.divTgt) ? 'Field Tgt' : 'Tgt', data: trends.tgt ?? [], color: XL.blue },
+                          ...(hasSeries(trends.divTgt) ? [{ name: 'Div Tgt', data: trends.divTgt!, color: XL.orange }] : []),
                           { name: 'Disp', data: trends.disp ?? [], color: XL.red },
                           { name: 'Coll', data: trends.coll ?? [], color: XL.green },
                         ]}

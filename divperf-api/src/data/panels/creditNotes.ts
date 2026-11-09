@@ -178,6 +178,45 @@ export async function fetchCnBreakdown(
   );
 }
 
+/**
+ * One brand per product — the name on its sales rows, else any — for the
+ * products' credit notes. Sales and secondary rows name some brands differently.
+ */
+const productBrand = () => {
+  const brand = code(DIMENSION.brand.codeCol);
+  return `SELECT ${PRODUCT_KEY} AS node_code,
+           COALESCE(MAX(CASE WHEN NET_SALES <> 0 THEN ${brand} END), MAX(${brand})) AS brand
+      FROM ${SOURCE}
+     GROUP BY ${PRODUCT_KEY}`;
+};
+
+/**
+ * Credit notes per brand — the CN column of the Key Brands grid, keyed by the
+ * sales table's brand. A product the sales table has no brand for is in no
+ * brand, only in the Total.
+ */
+export async function fetchCnByBrand(
+  db: Db,
+  scope: Scope,
+  filters: PanelFilters,
+  salesMonths: SalesMonths | null,
+): Promise<Map<string, CnFigures>> {
+  const { from, where, params, measures } = cnQuery(scope, filters, salesMonths);
+  const rows = await db.all<CnMeasureRow & { node_code: string }>(
+    `SELECT b.brand AS node_code,
+    ${measures}
+  FROM ${from}
+  JOIN (
+    ${productBrand()}
+  ) b ON b.node_code = ${CN_COLUMN.product}
+  WHERE ${where}
+    AND b.brand IS NOT NULL
+  GROUP BY b.brand`,
+    params,
+  );
+  return new Map(rows.map((r) => [r.node_code, figures(r)]));
+}
+
 export interface CnDetail {
   byHq: CnDetailRow[];
   bySku: CnDetailRow[];
@@ -265,7 +304,6 @@ async function fetchBySku(
 ): Promise<CnDetailRow[]> {
   const { from, where, params, measures } = cnQuery(scope, filters, salesMonths);
   const gross = grossBy(scope, filters, PRODUCT_KEY);
-  const brand = code(DIMENSION.brand.codeCol);
 
   const rows = await db.all<DetailRow>(
     `SELECT n.*, b.brand AS node_name, g.gross
@@ -277,10 +315,7 @@ async function fetchBySku(
     GROUP BY ${CN_COLUMN.product}
   ) n
   LEFT JOIN (
-    SELECT ${PRODUCT_KEY} AS node_code,
-           COALESCE(MAX(CASE WHEN NET_SALES <> 0 THEN ${brand} END), MAX(${brand})) AS brand
-      FROM ${SOURCE}
-     GROUP BY ${PRODUCT_KEY}
+    ${productBrand()}
   ) b ON b.node_code = n.node_code
   LEFT JOIN (
     ${gross.sql}

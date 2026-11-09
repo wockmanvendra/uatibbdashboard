@@ -26,6 +26,8 @@ export interface FakeUser {
   email: string | null;
   sap_code: string | null;
   is_service_admin?: boolean;
+  /** The extra roles: put in the token as the service does (main role first). */
+  extraRoles?: { usertype: string; division_code: string; sap_code?: string | null }[];
   active: boolean;
 }
 
@@ -45,6 +47,10 @@ export const MOBILE = {
   ALL: '9000000009',
   SERVICE_ADMIN: '9000000010',
   NO_TERRITORY: '9000000011',
+  /** RM R1 of division 78 (region JHH), and BU head of A8 in IBB Insights. */
+  TWO_ROLES: '9000000012',
+  /** A service admin (BU head of 84) who is also TM T1 of division 78. */
+  ADMIN_TWO_ROLES: '9000000013',
 } as const;
 
 function freshUsers(): Map<string, FakeUser> {
@@ -57,7 +63,10 @@ function freshUsers(): Map<string, FakeUser> {
     person('u-B1', 'bu-head', MOBILE.BU_HEAD, null, null),
     person('u-A1', 'nsm', MOBILE.ALL, 'A1', 'MNAT', '85'),
     { ...person('u-S1', 'admin', MOBILE.SERVICE_ADMIN, null, null, '85'), is_service_admin: true },
+    // A service admin who is also TM T1 (HQ M2HYDP) in IBB Insights.
+    { ...person('u-S2', 'bu-head', MOBILE.ADMIN_TWO_ROLES, 'T1', null, '84'), is_service_admin: true, extraRoles: [{ usertype: 'tm', division_code: '78' }] },
     person('u-T9', 'tm', MOBILE.NO_TERRITORY, 'T9', null),
+    { ...person('u-M1', 'rm', MOBILE.TWO_ROLES, 'R1', 'JHH'), extraRoles: [{ usertype: 'bu-head', division_code: 'A8' }] },
   ];
   return new Map(list.map((u) => [u.mobileno, u]));
 }
@@ -79,9 +88,13 @@ const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 /** A token as the service signs it; `over` changes any claim (aud, iss, exp…). */
 export function tokenFor(u: FakeUser, over: Record<string, unknown> = {}): string {
   const now = Math.floor(Date.now() / 1000);
-  const { active: _a, ...claims } = u;
+  const { active: _a, extraRoles, ...claims } = u;
+  const roles = [
+    { key: `${u.usertype}:${u.division_code ?? ''}`, usertype: u.usertype, division_code: u.division_code, sap_code: u.sap_code, main: true },
+    ...(extraRoles ?? []).map((r) => ({ key: `${r.usertype}:${r.division_code}`, ...r, sap_code: r.sap_code ?? null, main: false })),
+  ];
   const header = b64({ alg: 'RS256', typ: 'JWT', kid: KID });
-  const payload = b64({ ...claims, iss: config.CENTRAL_ISSUER, aud: config.CENTRAL_CLIENT_ID, iat: now, exp: now + 3600, ...over });
+  const payload = b64({ ...claims, roles, iss: config.CENTRAL_ISSUER, aud: config.CENTRAL_CLIENT_ID, iat: now, exp: now + 3600, ...over });
   const signature = sign('RSA-SHA256', Buffer.from(`${header}.${payload}`), privateKey).toString('base64url');
   return `${header}.${payload}.${signature}`;
 }
@@ -134,7 +147,7 @@ export function installFakeCentral() {
         if (!appOk) return json(401, { error: 'Invalid API key' });
         const type = url.searchParams.get('usertype');
         const users = [...state.users.values()].filter((u) => u.active && (!type || u.usertype === type))
-          .map(({ sub, active: _a, ...u }) => ({ ...u, id: sub }));
+          .map(({ sub, active: _a, extraRoles: _r, ...u }) => ({ ...u, id: sub }));
         return json(200, { total: users.length, users });
       }
       default:

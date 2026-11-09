@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { useAuthStore } from '../auth/authStore';
-import type { ScopeLevel, UserRole } from '../types/api';
+import { useFilterStore } from '../store/filterStore';
+import { fetchSession } from '../lib/api';
+import { ROLE_LABEL, roleLabel } from '../lib/roles';
+import type { ScopeLevel } from '../types/api';
 
 const LEVEL_LABEL: Record<Exclude<ScopeLevel, 'ALL'>, string> = {
   DIVISION: 'Division',
@@ -8,20 +12,32 @@ const LEVEL_LABEL: Record<Exclude<ScopeLevel, 'ALL'>, string> = {
   HQ: 'HQ',
 };
 
-const ROLE_LABEL: Record<UserRole, string> = {
-  tm: 'Territory Manager',
-  rm: 'Regional Manager',
-  zsm: 'Zonal Sales Manager',
-  nsm: 'National Sales Manager',
-  'bu-head': 'BU Head',
-  admin: 'Admin',
-};
-
 /** `dark` sits on the blue title bar; `light` on a white surface. */
 export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const signOut = useAuthStore((s) => s.signOut);
+  const setUser = useAuthStore((s) => s.setUser);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState('');
   if (!user) return null;
+
+  const roles = user.roles ?? [];
+  const switchRole = async (roleKey: string) => {
+    if (!token || roleKey === user.roleKey) return;
+    setSwitching(true);
+    setSwitchError('');
+    try {
+      const next = await fetchSession(token, roleKey);
+      // The filters were chosen in the other role's scope and may not exist in this one.
+      useFilterStore.getState().clearAll();
+      setUser(next);
+    } catch {
+      setSwitchError('Could not switch role. Try again.');
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   const { level, nodes } = user.effectiveScope;
   const scope = level === 'ALL' ? 'All divisions' : `${LEVEL_LABEL[level]} ${nodes.join(', ')}`;
@@ -36,6 +52,32 @@ export function UserMenu({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
           {ROLE_LABEL[user.role]} · {scope}
         </div>
       </div>
+      {roles.length > 1 && (
+        <label className="flex flex-col gap-0.5">
+          <span className="sr-only">Switch role</span>
+          <select
+            value={user.roleKey}
+            onChange={(e) => void switchRole(e.target.value)}
+            disabled={switching}
+            title={switchError || 'Switch role'}
+            aria-label="Switch role"
+            className={`max-w-[220px] rounded-sm border px-1.5 py-1 text-[12px] font-semibold ${
+              dark ? 'border-white/60 bg-transparent text-white [&>option]:text-ink' : 'border-rule bg-white text-ink-2'
+            }`}
+          >
+            {roles.map((r) => (
+              <option key={r.key} value={r.key}>
+                {roleLabel(r)}
+              </option>
+            ))}
+          </select>
+          {switchError && (
+            <span role="alert" className={`text-[11px] ${dark ? 'text-white' : 'text-bad'}`}>
+              {switchError}
+            </span>
+          )}
+        </label>
+      )}
       <button
         type="button"
         onClick={signOut}

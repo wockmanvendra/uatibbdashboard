@@ -28,6 +28,7 @@ export type TabId =
 
 export type Grain = 'division' | 'brand' | 'zone' | 'region' | 'hq';
 
+
 // ---------------------------------------------------------------------------
 // Meta
 // ---------------------------------------------------------------------------
@@ -135,9 +136,25 @@ export interface Metric {
 
 /** Excel "Primary" card: rows Tgt / Coll / Disp x columns Value / Ach% / Gr%. */
 export interface PrimaryPanel {
+  /** The field budget (BUDGET1). Every `ach` is on it. */
   target: Metric;
   collection: Metric;
   dispatch: Metric;
+  /**
+   * The division budget (BUDGET), with achievement on it, shown beside the
+   * field one. It is set per division and month only: null when the view is
+   * narrowed to a zone, region, HQ or brand — always, for TMs, RMs and ZSMs.
+   */
+  divisionTarget: DivisionTarget | null;
+}
+
+export interface DivisionTarget {
+  value: number | null;
+  /** Collection and dispatch as % of the division budget. */
+  collAch: number | null;
+  dispAch: number | null;
+  /** Against the same months a year earlier. */
+  gr: number | null;
 }
 
 /**
@@ -176,24 +193,32 @@ export const KEY_BRAND_COLUMNS = [
   'brand',
   'tgt',
   'disp',
+  'dispGrPct',
   'coll',
   'achOnColl',
-  'grPct',
+  'collGrPct',
+  'creditNote',
+  'cnPct',
   'sec',
   'inventory',
   'rcpa',
+  'rcpaPctToSec',
 ] as const;
 export type KeyBrandColumn = (typeof KEY_BRAND_COLUMNS)[number];
 export type KeyBrandRow = [
   brand: string,
   tgt: number | null,
   disp: number | null,
+  dispGrPct: number | null,
   coll: number | null,
   achOnColl: number | null,
-  grPct: number | null,
+  collGrPct: number | null,
+  creditNote: number | null,
+  cnPct: number | null,
   sec: number | null,
   inventory: number | null,
   rcpa: number | null,
+  rcpaPctToSec: number | null,
 ];
 
 export interface KeyBrandsPanel {
@@ -246,6 +271,7 @@ export const GEO_COLUMNS = [
   'inventoryValue',
   'rcpa',
   'rcpaPctToSec',
+  'achOnDisp',
 ] as const;
 export type GeoColumn = (typeof GEO_COLUMNS)[number];
 export type GeoRow = [
@@ -263,6 +289,8 @@ export type GeoRow = [
   inventoryValue: number | null,
   rcpa: number | null,
   rcpaPctToSec: number | null,
+  /** Dispatch as % of the target. Last, so the earlier positions keep their meaning. */
+  achOnDisp: number | null,
 ];
 
 export interface GeoTablePanel {
@@ -340,6 +368,8 @@ export interface TrendsPanel {
   pcpm?: (number | null)[];
   /** Chart "Tgt vs. Disp vs. Coll". */
   tgt?: (number | null)[];
+  /** The division budget by month; omitted for a view below the division. */
+  divTgt?: (number | null)[];
   coll?: (number | null)[];
   /** Chart "Target vs Ach% & Gr%": collection achievement, and dispatch growth
    *  against the same month a year earlier. */
@@ -672,10 +702,29 @@ export interface OtpVerifyBody {
 export interface SessionUser {
   id: string;
   name: string;
+  /** The role this session is in. */
   role: UserRole;
   mobile: string;
   scopeId: string;
   effectiveScope: EffectiveScope;
+  /**
+   * The person's roles in this dashboard, main role first (Central User Service: the
+   * account's role and the extra roles ticked for IBB Insights). With more than one they
+   * choose, and can switch.
+   */
+  roles: SessionRole[];
+  /** The active role's key — sent back as the X-Dashboard-Role header. */
+  roleKey: string;
+}
+
+export interface SessionRole {
+  /** "<usertype>:<division>", e.g. "rm:78". */
+  key: string;
+  role: UserRole;
+  division: string | null;
+  divisionName: string | null;
+  /** This role shows every division (a service admin's or listed mobile's main role). */
+  allDivisions: boolean;
 }
 
 /** `token` is the Central User Service's session token, sent back as "Bearer". */

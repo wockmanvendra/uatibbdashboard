@@ -79,9 +79,9 @@ describe('collection by brand', () => {
     expect(res.mix!.collNote).toContain('net of GST');
 
     const row = res.keyBrands!.rows[0]!;
-    expect(row[3]).toBe(142_010_000);
-    expect(row[4]).toBeCloseTo((142_010_000 / 150_000_000) * 100, 9);
-    expect(res.keyBrands!.total![3]).toBe(399_610_000);
+    expect(row[4]).toBe(142_010_000);
+    expect(row[5]).toBeCloseTo((142_010_000 / 150_000_000) * 100, 9);
+    expect(res.keyBrands!.total![4]).toBe(399_610_000);
     expect(res.keyBrands!.note).toContain('COLLECTION_MATERIAL');
     // The KPI keeps total collection.
     expect(res.primary!.collection.value).toBe(419_680_000);

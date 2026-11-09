@@ -2,6 +2,8 @@
  * Sign-in, through the Central User Service:
  *   POST /api/auth/otp/request   — the service emails a one-time password
  *   POST /api/auth/otp/verify    — exchange it for the service's session token
+ *   GET  /api/auth/session       — the signed-in person, in the role asked for
+ *                                  (X-Dashboard-Role): used to switch roles
  *
  * The service decides who may sign in (an active account allowed this app);
  * this API adds what they may see. Rate-limited per IP, as the D2D portal's
@@ -31,6 +33,8 @@ export function toSessionUser(user: UserRecord): SessionUser {
     mobile: user.mobileno,
     scopeId: scope.scopeId,
     effectiveScope: { level: scope.level, nodes: scope.nodes },
+    roles: user.roles,
+    roleKey: user.roleKey,
   };
 }
 
@@ -49,7 +53,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const user = await sessionUser(claims);
     // Signed in to an empty dashboard is worse than told why.
     if (!hasTerritory(user)) throw scopeEmpty(NO_TERRITORY);
-    req.log.info({ userId: user.id, role: user.usertype, divisions: user.divisions }, 'signed in');
+    req.log.info({ userId: user.id, role: user.usertype, divisions: user.divisions, roles: user.roles.length }, 'signed in');
     return { token, user: toSessionUser(user) };
   });
+
+  // Signed in (the auth plugin has checked the token and picked the role).
+  app.get('/api/auth/session', async (req): Promise<SessionUser> => toSessionUser(req.appUser!));
 };

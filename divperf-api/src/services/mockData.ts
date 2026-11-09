@@ -336,16 +336,22 @@ function buildKeyBrands(f: MockFilters, total: NonNullable<ReturnType<typeof rol
     const inv = round2((total.stock + total.git) * w);
     const rcpa = round2(total.rcpaActual * w * (0.8 + r() * 0.4)); // DUMMY: no source
     const priorColl = coll / (1 + (r() * 0.4 - 0.12));
+    const priorDisp = disp / (1 + (r() * 0.4 - 0.12));
+    const cn = round2(total.cn * w);
     return [
       brand,
       tgt,
       disp,
+      M.grPct(disp, priorDisp),
       coll,
       M.achPct(coll, tgt),
       M.grPct(coll, priorColl),
+      cn,
+      M.cnPct(cn, round2(total.gross * w)),
       sec,
       inv,
       rcpa,
+      M.rcpaPctToSec(rcpa, sec),
     ] as KeyBrandRow;
   });
 }
@@ -455,6 +461,7 @@ function buildGeoTable(grain: 'zone' | 'region' | 'hq', f: MockFilters, months: 
       inv,
       cur.rcpaActual,
       M.rcpaPctToSec(cur.rcpaActual, cur.sec),
+      M.achPct(cur.disp, cur.tgt),
     ]);
   }
 
@@ -476,6 +483,7 @@ function buildGeoTable(grain: 'zone' | 'region' | 'hq', f: MockFilters, months: 
     round2(acc.inv),
     round2(acc.rcpa),
     M.rcpaPctToSec(acc.rcpa, acc.sec),
+    M.achPct(acc.disp, acc.tgt),
   ];
 
   return {
@@ -772,6 +780,15 @@ export function buildMockTab(tabId: string, f: MockFilters): TabResponse {
         ach: empty ? null : M.achPct(c.disp, c.tgt),
         gr: M.grPct(empty ? null : c.disp, prior?.disp ?? null),
       },
+      divisionTarget:
+        empty || f.zone.length || f.region.length || f.hq.length || f.brand.length
+          ? null
+          : {
+              value: round2(c.tgt * 1.03),
+              collAch: M.achPct(c.coll, c.tgt * 1.03),
+              dispAch: M.achPct(c.disp, c.tgt * 1.03),
+              gr: null,
+            },
     };
   }
   if (has('pcpm')) {

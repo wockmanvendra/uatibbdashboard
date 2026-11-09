@@ -49,6 +49,9 @@ function useHospitalSample(): HospitalSample | null {
   });
   return data ?? null;
 }
+/** Said by the charts that draw the list's hospitals when it has none. */
+const EMPTY_LIST = 'The hospital master list (Infinity.Hospital_List) has no hospitals for this selection.';
+
 /** The HML's own tier names, for the list's filter. */
 const SOURCE_TIER: Record<string, string> = { 'Tier I': 'Tier 1', 'Tier II': 'Tier 2', 'Tier III': 'Tier 3', 'Tier IV': 'Tier 4' };
 
@@ -103,6 +106,9 @@ export function HospitalCoverageChart({ data, reason, stale }: { data: HospitalP
 
 /** The HML's hospitals by tier. */
 export function HmlTierPie({ data, stale }: { data: HospitalPanel; stale?: boolean }) {
+  if (!data.tiers.some((t) => t.count > 0)) {
+    return <UnavailableChart title="HML mix by Tier" reason={EMPTY_LIST} height={CHART_HEIGHT.trend} />;
+  }
   const labels = data.tiers.map((t) => t.label);
   const values = data.tiers.map((t) => t.count);
   const option: EChartsOption = {
@@ -148,6 +154,9 @@ export function HmlTierPie({ data, stale }: { data: HospitalPanel; stale?: boole
 export function TierCoverageChart({ data, stale }: { data: HospitalPanel; stale?: boolean }) {
   const sample = useHospitalSample();
   const recorded = data.tiers.some((t) => t.covered !== null);
+  if (!data.tiers.some((t) => t.count > 0)) {
+    return <UnavailableChart title="Tier-wise Covered vs Missed" reason={EMPTY_LIST} height={CHART_HEIGHT.trend} />;
+  }
   if (!recorded && sample?.tiers?.length) {
     const pctOf = new Map(sample.tiers.map((t) => [t.tier, t.coveragePct]));
     const tiers = data.tiers.map((t) => {

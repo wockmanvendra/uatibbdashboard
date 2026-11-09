@@ -4,7 +4,9 @@
  */
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ApiRequestError, requestOtp, verifyOtp } from '../lib/api';
+import { ApiRequestError, fetchSession, requestOtp, verifyOtp } from '../lib/api';
+import { roleLabel } from '../lib/roles';
+import type { LoginResponse } from '../types/api';
 import { useAuthStore } from './authStore';
 import { OtpInput } from './OtpInput';
 import { Spinner } from '../components/ui/States';
@@ -26,7 +28,10 @@ export function LoginPage() {
   const location = useLocation();
   const signIn = useAuthStore((s) => s.signIn);
 
-  const [step, setStep] = useState<'mobile' | 'otp'>('mobile');
+  const [step, setStep] = useState<'mobile' | 'otp' | 'role'>('mobile');
+  /** Signed in with several roles: kept until one is chosen. */
+  const [pending, setPending] = useState<LoginResponse | null>(null);
+  const [choosing, setChoosing] = useState<string | null>(null);
   const [mobile, setMobile] = useState('');
   const [otp, setOtp] = useState<string[]>(EMPTY_OTP);
   const [countdown, setCountdown] = useState(0);
@@ -80,9 +85,15 @@ export function LoginPage() {
     setError('');
     setBusy('verify');
     try {
-      signIn(await verifyOtp(mobile, code));
-      const from = (location.state as { from?: string } | null)?.from;
-      navigate(from ?? '/', { replace: true });
+      const session = await verifyOtp(mobile, code);
+      // Several roles: choose one before the dashboard opens.
+      if ((session.user.roles?.length ?? 0) > 1) {
+        setPending(session);
+        setStep('role');
+        setBusy(null);
+        return;
+      }
+      open(session);
     } catch (err) {
       setError(messageOf(err, 'Sign-in failed. Try again.'));
       setOtp(EMPTY_OTP);
@@ -92,6 +103,25 @@ export function LoginPage() {
       }
       setBusy(null);
       focusFirstOtpBox();
+    }
+  };
+
+  const open = (session: LoginResponse) => {
+    signIn(session);
+    const from = (location.state as { from?: string } | null)?.from;
+    navigate(from ?? '/', { replace: true });
+  };
+
+  const chooseRole = async (roleKey: string) => {
+    if (!pending || choosing) return;
+    setError('');
+    setChoosing(roleKey);
+    try {
+      const user = roleKey === pending.user.roleKey ? pending.user : await fetchSession(pending.token, roleKey);
+      open({ token: pending.token, user });
+    } catch (err) {
+      setError(messageOf(err, 'Could not open the dashboard in that role. Try again.'));
+      setChoosing(null);
     }
   };
 
@@ -127,118 +157,147 @@ export function LoginPage() {
             </p>
           </header>
 
-          <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between">
-                <label htmlFor="login-mobile" className="login-label">
-                  Mobile number
-                </label>
-                {step === 'otp' && (
-                  <button type="button" onClick={changeNumber} className="login-link">
-                    Change
-                  </button>
-                )}
-              </div>
-              <div className="login-mobile-row">
-                <span className="login-mobile-prefix" aria-hidden="true">
-                  +91
-                </span>
-                <input
-                  ref={mobileRef}
-                  id="login-mobile"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel-national"
-                  maxLength={10}
-                  placeholder="98XXXXXXXX"
-                  value={mobile}
-                  disabled={step === 'otp'}
-                  onChange={(e) => {
-                    setMobile(e.target.value.replace(/\D/g, ''));
-                    setError('');
-                  }}
-                  className="login-mobile-input"
-                />
-                {step === 'mobile' && (
-                  <button type="submit" disabled={busy !== null} className="login-send-btn">
-                    {busy === 'send' ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Spinner size={13} />
-                        Sending…
-                      </span>
-                    ) : (
-                      'Send OTP'
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {step === 'otp' && (
-              <div className="rise-in flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5" ref={otpGroupRef}>
-                  <span id="login-otp-label" className="login-label">
-                    One-time password
-                  </span>
-                  <OtpInput
-                    value={otp}
-                    onChange={(next) => {
-                      setOtp(next);
-                      setError('');
-                    }}
-                    labelledBy="login-otp-label"
-                    disabled={busy === 'verify'}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[12px] text-ink-3" aria-live="polite">
-                  <span>Sent to {sentTo || `the email for ${formatMobile(mobile)}`}</span>
-                  {countdown > 0 ? (
-                    <span className="tnum font-mono">Resend in {countdown}s</span>
-                  ) : (
+          {step === 'role' && pending ? (
+            <div className="rise-in flex flex-col gap-3">
+              <p className="login-label">Choose how to view the dashboard</p>
+              <p className="text-[12px] leading-relaxed text-ink-3">
+                You have more than one role. Pick one; you can switch any time from the menu at the top.
+              </p>
+              <ul className="flex flex-col gap-2">
+                {pending.user.roles.map((r) => (
+                  <li key={r.key}>
                     <button
                       type="button"
-                      className="login-link"
-                      onClick={() => void sendOtp()}
-                      disabled={busy !== null}
+                      onClick={() => void chooseRole(r.key)}
+                      disabled={choosing !== null}
+                      className="login-role-btn"
                     >
+                      <span>{roleLabel(r)}</span>
+                      {choosing === r.key && <Spinner size={14} />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {error && (
+                <p role="alert" className="login-error">
+                  {error}
+                </p>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-baseline justify-between">
+                  <label htmlFor="login-mobile" className="login-label">
+                    Mobile number
+                  </label>
+                  {step === 'otp' && (
+                    <button type="button" onClick={changeNumber} className="login-link">
+                      Change
+                    </button>
+                  )}
+                </div>
+                <div className="login-mobile-row">
+                  <span className="login-mobile-prefix" aria-hidden="true">
+                    +91
+                  </span>
+                  <input
+                    ref={mobileRef}
+                    id="login-mobile"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    maxLength={10}
+                    placeholder="98XXXXXXXX"
+                    value={mobile}
+                    disabled={step === 'otp'}
+                    onChange={(e) => {
+                      setMobile(e.target.value.replace(/\D/g, ''));
+                      setError('');
+                    }}
+                    className="login-mobile-input"
+                  />
+                  {step === 'mobile' && (
+                    <button type="submit" disabled={busy !== null} className="login-send-btn">
                       {busy === 'send' ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <Spinner size={12} />
+                          <Spinner size={13} />
                           Sending…
                         </span>
                       ) : (
-                        'Resend OTP'
+                        'Send OTP'
                       )}
                     </button>
                   )}
                 </div>
               </div>
-            )}
 
-            {error && (
-              <p role="alert" className="login-error">
-                {error}
-              </p>
-            )}
+              {step === 'otp' && (
+                <div className="rise-in flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5" ref={otpGroupRef}>
+                    <span id="login-otp-label" className="login-label">
+                      One-time password
+                    </span>
+                    <OtpInput
+                      value={otp}
+                      onChange={(next) => {
+                        setOtp(next);
+                        setError('');
+                      }}
+                      labelledBy="login-otp-label"
+                      disabled={busy === 'verify'}
+                    />
+                  </div>
 
-            {step === 'otp' && (
-              <button
-                type="submit"
-                disabled={busy !== null || otp.join('').length < OTP_LENGTH}
-                className="login-primary-btn"
-              >
-                {busy === 'verify' ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Spinner size={16} />
-                    Verifying…
-                  </span>
-                ) : (
-                  'Verify & open dashboard'
-                )}
-              </button>
-            )}
-          </form>
+                  <div className="flex items-center justify-between text-[12px] text-ink-3" aria-live="polite">
+                    <span>Sent to {sentTo || `the email for ${formatMobile(mobile)}`}</span>
+                    {countdown > 0 ? (
+                      <span className="tnum font-mono">Resend in {countdown}s</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="login-link"
+                        onClick={() => void sendOtp()}
+                        disabled={busy !== null}
+                      >
+                        {busy === 'send' ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Spinner size={12} />
+                            Sending…
+                          </span>
+                        ) : (
+                          'Resend OTP'
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p role="alert" className="login-error">
+                  {error}
+                </p>
+              )}
+
+              {step === 'otp' && (
+                <button
+                  type="submit"
+                  disabled={busy !== null || otp.join('').length < OTP_LENGTH}
+                  className="login-primary-btn"
+                >
+                  {busy === 'verify' ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Spinner size={16} />
+                      Verifying…
+                    </span>
+                  ) : (
+                    'Verify & open dashboard'
+                  )}
+                </button>
+              )}
+            </form>
+          )}
 
           <p className="mt-6 border-t border-rule-soft pt-4 text-[12px] leading-relaxed text-ink-3">
             You will see figures for your own territory — HQ, region, zone or division — as set in

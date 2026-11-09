@@ -25,7 +25,7 @@ const CHART_SERIES = [
   // "Disp, Sec, RCPA, PCPM"
   'disp', 'sec', 'rcpa', 'pcpm',
   // "Tgt vs. Disp vs. Coll"
-  'tgt', 'coll',
+  'tgt', 'divTgt', 'coll',
   // "RCPA Plan vs. Actual"
   'rcpaPlan', 'rcpaActual', 'valuePerDr',
   // "Credit Note"

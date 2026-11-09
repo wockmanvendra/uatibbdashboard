@@ -3,6 +3,8 @@
  *
  * Persisted so a page reload does not sign the user out. The API remains the
  * authority — an expired or revoked token comes back 401 and `api.ts` clears it.
+ * `user.roleKey` is the role the person views the dashboard as; every request
+ * carries it (X-Dashboard-Role).
  */
 import { create } from 'zustand';
 import type { LoginResponse, SessionUser } from '../types/api';
@@ -13,6 +15,8 @@ interface AuthState {
   token: string | null;
   user: SessionUser | null;
   signIn: (session: LoginResponse) => void;
+  /** The same session in another of the person's roles. */
+  setUser: (user: SessionUser) => void;
   signOut: () => void;
 }
 
@@ -27,18 +31,28 @@ function loadSession(): LoginResponse | null {
 
 const initial = loadSession();
 
+function save(session: LoginResponse) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // Storage unavailable (private mode): the session lasts until reload.
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   token: initial?.token ?? null,
   user: initial?.user ?? null,
 
   signIn: ({ token, user }) => {
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ token, user }));
-    } catch {
-      // Storage unavailable (private mode): the session lasts until reload.
-    }
+    save({ token, user });
     set({ token, user });
   },
+
+  setUser: (user) =>
+    set((s) => {
+      if (s.token) save({ token: s.token, user });
+      return { user };
+    }),
 
   signOut: () => {
     try {

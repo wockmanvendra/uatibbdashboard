@@ -15,6 +15,7 @@ import type {
   OtpRequestResponse,
   OtpVerifyBody,
   TabResponse,
+  SessionUser,
   VersionResponse,
 } from '../types/api';
 import type { Filters } from '../queries/keys';
@@ -37,13 +38,19 @@ interface RequestOptions {
   signal?: AbortSignal;
   /** Sent as JSON with POST. */
   body?: object;
+  /** A session other than the stored one, e.g. while choosing a role after sign-in. */
+  as?: { token: string; roleKey: string };
 }
 
-async function request<T>(path: string, { signal, body }: RequestOptions = {}): Promise<T> {
-  const token = useAuthStore.getState().token;
+async function request<T>(path: string, { signal, body, as }: RequestOptions = {}): Promise<T> {
+  const session = useAuthStore.getState();
+  const token = as?.token ?? session.token;
+  const roleKey = as?.roleKey ?? session.user?.roleKey;
   const headers: Record<string, string> = { accept: 'application/json' };
   if (body) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
+  // Which of the person's roles to view the dashboard as; the API checks it against the token.
+  if (token && roleKey) headers['x-dashboard-role'] = roleKey;
 
   let res: Response;
   try {
@@ -130,6 +137,10 @@ export const requestOtp = (mobile: string) =>
 
 export const verifyOtp = (mobile: string, otp: string) =>
   request<LoginResponse>('/auth/otp/verify', { body: { mobile, otp } satisfies OtpVerifyBody });
+
+/** The signed-in person in one of their roles: who they are and what they see. */
+export const fetchSession = (token: string, roleKey: string) =>
+  request<SessionUser>('/auth/session', { as: { token, roleKey } });
 
 export function fetchFilterOptions(
   sel: { division: string[]; zone: string[]; region: string[] },

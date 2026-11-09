@@ -18,6 +18,8 @@ interface Tile {
   title?: string;
   tone?: 'bad';
   extra?: ReactNode;
+  /** A second figure beside the value, under its own caption: the division budget's. */
+  beside?: { value: string; caption: string; title?: string };
 }
 
 const arrow = (n: number | null | undefined) =>
@@ -34,14 +36,17 @@ export function KpiStrip({
 }) {
   const full = (n: number | null | undefined) => (n === null || n === undefined ? undefined : moneyFull(n));
   const gr = primary?.collection.gr ?? null;
+  // The division budget: only for a division-level view.
+  const div = primary?.divisionTarget ?? null;
 
   const tiles: Tile[] = [
     {
       label: 'Target (₹ L)',
       value: lakhsAuto(primary?.target.value),
-      caption: 'Plan',
+      caption: div ? 'Field' : 'Field budget',
       color: 'var(--kpi-target)',
       title: full(primary?.target.value),
+      beside: div ? { value: lakhsAuto(div.value), caption: 'Division', title: full(div.value) } : undefined,
     },
     {
       label: 'Dispatch (₹ L)',
@@ -60,8 +65,9 @@ export function KpiStrip({
     {
       label: 'Ach% on Coll',
       value: percent(primary?.collection.ach),
-      caption: 'vs Target',
+      caption: div ? 'Field' : 'vs Field budget',
       color: 'var(--kpi-ach)',
+      beside: div ? { value: percent(div.collAch), caption: 'Division' } : undefined,
       extra: (
         <div className="mx-auto mt-1 w-3/4">
           <GapRibbon ach={primary?.collection.ach} label="Collection achievement" inline />
@@ -113,6 +119,25 @@ export function KpiStrip({
               <>
                 <Skeleton className="mx-auto mt-1.5 h-[26px] w-20" />
                 <Skeleton className="mx-auto mt-1.5 h-[11px] w-14" />
+              </>
+            ) : t.beside ? (
+              <>
+                <div className="mt-0.5 grid grid-cols-2 divide-x divide-[var(--xl-grid)]">
+                  {[{ value: t.value, caption: String(t.caption), title: t.title }, t.beside].map((f) => (
+                    <div key={f.caption} className="px-1">
+                      <div
+                        className={`text-[20px] font-bold leading-[30px] tnum ${
+                          f.value === EM_DASH ? 'text-[var(--xl-muted)]' : 'text-[var(--xl-text)]'
+                        }`}
+                        title={f.title}
+                      >
+                        {f.value}
+                      </div>
+                      <div className="text-[11px] text-[var(--xl-muted)] tnum">{f.caption}</div>
+                    </div>
+                  ))}
+                </div>
+                {t.extra}
               </>
             ) : (
               <>

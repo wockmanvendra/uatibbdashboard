@@ -1,6 +1,7 @@
 /**
  * The report's KEY BRANDS PERFORMANCE grid.
- * Columns: Brand | Tgt | Disp | Coll | Ach% on Coll | Gr% | Sec | Closing inventory | RCPA
+ * Columns: Brand | Tgt | Disp | Disp Gr% | Coll | Ach% on Coll | Coll Gr% |
+ *          Credit note | CN% | Sec | Closing inventory | RCPA | RCPA as % to Sec
  *
  * The Total row is the server's, from its totals — the grid shows the top
  * brands only, and the client never sums rows. (I3) Coll is collection split by
@@ -16,12 +17,16 @@ const COLUMNS: ColumnSpec[] = [
   { index: 0, label: 'Brand', format: 'text', sticky: true },
   { index: 1, label: 'Tgt', format: 'money' },
   { index: 2, label: 'Disp', format: 'money' },
-  { index: 3, label: 'Coll', format: 'money' },
-  { index: 4, label: 'Ach% on Coll', format: 'ach' },
-  { index: 5, label: 'Gr%', format: 'growth' },
-  { index: 6, label: 'Sec', format: 'money' },
-  { index: 7, label: 'Closing inventory', format: 'money' },
-  { index: 8, label: 'RCPA', format: 'money' },
+  { index: 3, label: 'Disp Gr%', format: 'growth' },
+  { index: 4, label: 'Coll', format: 'money' },
+  { index: 5, label: 'Ach% on Coll', format: 'ach' },
+  { index: 6, label: 'Coll Gr%', format: 'growth' },
+  { index: 7, label: 'Credit note', format: 'money' },
+  { index: 8, label: 'CN%', format: 'percent' },
+  { index: 9, label: 'Sec', format: 'money' },
+  { index: 10, label: 'Closing inventory', format: 'money' },
+  { index: 11, label: 'RCPA', format: 'money' },
+  { index: 12, label: 'RCPA as % to Sec', format: 'percent' },
 ];
 
 export function KeyBrandsTable({

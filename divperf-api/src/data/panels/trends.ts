@@ -16,6 +16,8 @@ type Row = MeasureRow & { date_key: number };
 export interface TrendPoint {
   yrMn: number;
   tgt: number | null;
+  /** The division budget: none for a zone, region, HQ or brand. */
+  divTgt: number | null;
   disp: number | null;
   gross: number | null;
   coll: number | null;
@@ -51,6 +53,7 @@ export async function fetchTrend(db: Db, scope: Scope, filters: PanelFilters): P
     (r): TrendPoint => ({
       yrMn: Number(r.date_key),
       tgt: num(r.tgt),
+      divTgt: num(r.div_tgt),
       disp: num(r.disp),
       gross: num(r.gross),
       coll: num(r.coll),

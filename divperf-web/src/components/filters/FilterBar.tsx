@@ -114,6 +114,7 @@ export function FilterBar() {
           onChange={setPeriod}
           loading={isLoading}
         />
+
       </div>
     </div>
   );

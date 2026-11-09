@@ -37,6 +37,22 @@ export interface CentralUser {
   sap_code?: string | null;
   /** Present once the service puts it in tokens: may use the service's admin page. */
   is_service_admin?: boolean;
+  /**
+   * The person's roles for this app, main role first: the account's own and the extra roles
+   * ticked for it. The top-level usertype / division_code are the first. Absent from an older
+   * service, and from its user lists.
+   */
+  roles?: CentralRole[];
+}
+
+/** One role: a user type in a division. */
+export interface CentralRole {
+  key: string;
+  usertype: string;
+  division_code: string | null;
+  division_name?: string | null;
+  sap_code?: string | null;
+  main?: boolean;
 }
 
 export interface TokenClaims extends CentralUser {

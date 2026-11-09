@@ -5,7 +5,7 @@ import { forgetCachedUsers } from '../plugins/auth.js';
 import { resetCentralCaches } from '../services/centralAuth.js';
 import { installFakeCentral, MOBILE, tokenFor } from '../test/central.js';
 import type {
-  ApiError, FiltersResponse, LoginResponse, OtpRequestResponse, TabResponse,
+  ApiError, FiltersResponse, LoginResponse, OtpRequestResponse, SessionUser, TabResponse,
 } from '../types/api.js';
 
 const TAB_URL = '/api/dashboard/division-performance?from=202604&to=202608';
@@ -186,5 +186,55 @@ describe('scope comes from the field hierarchy (§6.2)', () => {
     for (const who of [MOBILE.ALL, MOBILE.SERVICE_ADMIN]) {
       expect((await signIn(who)).user.effectiveScope).toEqual({ level: 'ALL', nodes: [] });
     }
+  });
+});
+
+describe('a person with several roles', () => {
+  const getRole = (token: string, url: string, role?: string) =>
+    app.inject({
+      method: 'GET',
+      url,
+      headers: { authorization: `Bearer ${token}`, ...(role ? { 'x-dashboard-role': role } : {}) },
+    });
+
+  it('signs in on the main role, and is told the others', async () => {
+    const { user } = await signIn(MOBILE.TWO_ROLES);
+    expect(user).toMatchObject({ role: 'rm', roleKey: 'rm:78', effectiveScope: { level: 'REGION', nodes: ['JHH'] } });
+    expect(user.roles.map((r) => r.key)).toEqual(['rm:78', 'bu-head:A8']);
+  });
+
+  it('views the dashboard as the role asked for, with that role\'s scope', async () => {
+    const { token, user: rm } = await signIn(MOBILE.TWO_ROLES);
+    const res = await getRole(token, '/api/auth/session', 'bu-head:A8');
+    expect(res.statusCode).toBe(200);
+    const buHead = res.json<SessionUser>();
+    expect(buHead).toMatchObject({ role: 'bu-head', roleKey: 'bu-head:A8', effectiveScope: { level: 'DIVISION', nodes: ['A8'] } });
+    // Different scope, so different cached views.
+    expect(buHead.scopeId).not.toBe(rm.scopeId);
+    expect((await getRole(token, TAB_URL, 'bu-head:A8')).statusCode).toBe(200);
+  });
+
+  it('ignores a role the token does not list: the main role applies', async () => {
+    const { token } = await signIn(MOBILE.TWO_ROLES);
+    for (const asked of ['admin:85', 'nsm:A8', 'x'.repeat(200)]) {
+      expect((await getRole(token, '/api/auth/session', asked)).json<SessionUser>())
+        .toMatchObject({ role: 'rm', effectiveScope: { level: 'REGION', nodes: ['JHH'] } });
+    }
+    // And someone with one role cannot borrow another's.
+    const tm = await signIn(MOBILE.TM);
+    expect((await getRole(tm.token, '/api/auth/session', 'bu-head:A8')).json<SessionUser>())
+      .toMatchObject({ role: 'tm', roles: [{ key: 'tm:78' }] });
+  });
+
+  it('gives a service admin all divisions on the main role, and each extra role its own view', async () => {
+    const { token, user } = await signIn(MOBILE.ADMIN_TWO_ROLES);
+    expect(user).toMatchObject({ role: 'bu-head', effectiveScope: { level: 'ALL', nodes: [] } });
+    expect(user.roles.map((r) => [r.key, r.allDivisions])).toEqual([['bu-head:84', true], ['tm:78', false]]);
+    expect((await getRole(token, '/api/auth/session', 'tm:78')).json<SessionUser>())
+      .toMatchObject({ role: 'tm', effectiveScope: { level: 'HQ', nodes: ['M2HYDP'] } });
+  });
+
+  it('needs a signed-in session to read it', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/auth/session' })).statusCode).toBe(401);
   });
 });

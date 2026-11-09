@@ -21,7 +21,7 @@ import {
   fetchBrandTotals, fetchBreakdown, fetchMix, type BrandTotals, type NodeBreakdown,
 } from '../data/panels/breakdown.js';
 import {
-  NO_CN, fetchCnBreakdown, fetchCnByMonth, fetchCnDetail,
+  NO_CN, fetchCnBreakdown, fetchCnByBrand, fetchCnByMonth, fetchCnDetail,
   type CnAmounts, type CnByMonth, type CnDetail, type CnFigures, type CnGrain, type CnNode, type SalesMonths,
 } from '../data/panels/creditNotes.js';
 import type { DataVersion } from './versionService.js';
@@ -81,7 +81,7 @@ const REASONS = {
   cnPct:
     'Credit notes cover this period, but the source has no gross sales for it, so CN% is left blank.',
   brandCollNote:
-    'Collection by brand is the product-level split of collection (COLLECTION_MATERIAL), net of GST — about 5% below total collection.',
+    'Collection by brand is the product-level split of collection (COLLECTION_MATERIAL), net of GST — about 5% below total collection. PCPM is not shown: TMs are not split by brand.',
   geoInventory:
     'Stock and GIT are recorded per plant, not per territory, so inventory cannot be split by zone, region or HQ.',
   priorYear:
@@ -201,7 +201,7 @@ export async function buildLiveTab(
   const headcountGrain: HeadcountGrain | null =
     has('geoTable') && tab.grain !== 'brand' ? (tab.grain as HeadcountGrain) : null;
 
-  const [totals, trend, breakdown, mix, brandTotals, cnMonths, cnNodes, cnDetail, manpower, headcount, effort, missed, hospitals, stockists] = await Promise.all([
+  const [totals, trend, breakdown, mix, brandTotals, cnMonths, cnNodes, cnDetail, manpower, headcount, effort, missed, hospitals, stockists, cnBrands] = await Promise.all([
     fetchTotals(db, scope, filters),
     tab.panels.includes('trends')
       ? fetchTrend(db, scope, filters)
@@ -245,6 +245,10 @@ export async function buildLiveTab(
       : Promise.resolve<HospitalPanel | null>(null),
     // Stockist-wise sales from the sales table's stockist columns.
     has('stockistTable') ? fetchStockists(db, scope, filters) : Promise.resolve<StockistFigures[]>([]),
+    // The Key Brands grid's credit notes, through each product's brand.
+    has('keyBrands')
+      ? fetchCnByBrand(db, scope, filters, pctMonths)
+      : Promise.resolve(new Map<string, CnFigures>()),
   ]);
 
   const cur = totals.cur;
@@ -314,6 +318,16 @@ export async function buildLiveTab(
         ach: M.achPct(cur?.disp ?? null, cur?.tgt ?? null),
         gr: M.grPct(cur?.disp ?? null, prior?.disp ?? null),
       },
+      // Only a division-level view has one: BUDGET has no zone, HQ or brand.
+      divisionTarget:
+        cur?.divTgt === null || cur?.divTgt === undefined
+          ? null
+          : {
+              value: cur.divTgt,
+              collAch: M.achPct(cur.coll, cur.divTgt),
+              dispAch: M.achPct(cur.disp, cur.divTgt),
+              gr: M.grPct(cur.divTgt, prior?.divTgt ?? null),
+            },
     };
   }
 
@@ -356,18 +370,22 @@ export async function buildLiveTab(
       columns: KEY_BRAND_COLUMNS,
       // The grid is a reading aid, not an export: 25 rows is already more than
       // anyone scans in a review meeting, and the CSV export carries the rest.
-      rows: breakdown.slice(0, 25).map(keyBrandRow),
+      rows: breakdown.slice(0, 25).map((n) => keyBrandRow(n, cnBrands.get(n.code))),
       // From the rollup, never from summing rows. (I3)
       total: [
         'Total',
         cur?.tgt ?? null,
         cur?.disp ?? null,
+        M.grPct(cur?.disp ?? null, prior?.disp ?? null),
         cur?.collMat ?? null,
         M.achPct(cur?.collMat ?? null, cur?.tgt ?? null),
-        M.grPct(cur?.disp ?? null, prior?.disp ?? null),
+        M.grPct(cur?.collMat ?? null, prior?.collMat ?? null),
+        cn.total,
+        M.cnPct(cn.forPct.total, cur?.gross ?? null),
         cur?.sec ?? null,
         cur?.inventory ?? null,
         cur?.rcpa ?? null,
+        M.rcpaPctToSec(cur?.rcpa ?? null, cur?.sec ?? null),
       ],
       note: REASONS.brandCollNote,
     };
@@ -496,18 +514,22 @@ function stockistTable(stockists: StockistFigures[], cur: Totals | null, prior: 
   return { columns: STOCKIST_COLUMNS, rows, total, growingCount: growing, degrowingCount: degrowing };
 }
 
-function keyBrandRow(n: NodeBreakdown): KeyBrandRow {
+function keyBrandRow(n: NodeBreakdown, cn: CnFigures | undefined): KeyBrandRow {
   return [
     n.name,
     n.tgt,
     n.disp,
+    M.grPct(n.disp, n.priorDisp),
     // COLLECTION has no brand; its split by product does.
     n.collMat,
     M.achPct(n.collMat, n.tgt),
-    M.grPct(n.disp, n.priorDisp),
+    M.grPct(n.collMat, n.priorCollMat),
+    cn?.total ?? null,
+    M.cnPct(cn?.forPct.total ?? null, n.gross),
     n.sec,
     n.inventory,
     n.rcpa,
+    M.rcpaPctToSec(n.rcpa, n.sec),
   ];
 }
 
@@ -552,6 +574,7 @@ function geoTable(
       inventoryApplies ? n.inventory : NO_SOURCE,
       n.rcpa,
       M.rcpaPctToSec(n.rcpa, n.sec),
+      M.achPct(n.disp, n.tgt),
     ] as GeoRow;
   });
 
@@ -564,7 +587,7 @@ function geoTable(
     codes.push(nodeCode);
     rows.push([
       node.name, null, null, null, null, null, null, NO_SOURCE,
-      node.cn.total, null, null, NO_SOURCE, null, null,
+      node.cn.total, null, null, NO_SOURCE, null, null, null,
     ]);
   }
 
@@ -586,6 +609,7 @@ function geoTable(
     geoNarrowed ? NO_SOURCE : (cur?.inventory ?? null),
     cur?.rcpa ?? null,
     M.rcpaPctToSec(cur?.rcpa ?? null, cur?.sec ?? null),
+    M.achPct(cur?.disp ?? null, cur?.tgt ?? null),
   ];
 
   return {
@@ -621,6 +645,11 @@ function trends(
   if (want.has('sec')) out.sec = fact('sec');
   if (want.has('rcpa')) out.rcpa = fact('rcpa');
   if (want.has('tgt')) out.tgt = fact('tgt');
+  if (want.has('divTgt')) {
+    // None below the division: omitted rather than a series of nulls.
+    const divTgt = fact('divTgt');
+    if (divTgt.some((v) => v !== null)) out.divTgt = divTgt;
+  }
   if (want.has('coll')) out.coll = fact('coll');
   if (want.has('pcpm')) {
     const pcpm = fact('coll').map(pcpmOfMonth);

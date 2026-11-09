@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { useAuthStore } from '../auth/authStore';
 import { useFilterStore } from '../store/filterStore';
+import { KEY_BRAND_COLUMNS } from '../types/api';
 import type {
   EffortFigures,
   DetailListResponse,
@@ -31,8 +32,26 @@ const session: LoginResponse = {
     mobile: '9000000002',
     scopeId: 'hq-1234abcd',
     effectiveScope: { level: 'HQ', nodes: ['M2HYDP'] },
+    roles: [{ key: 'tm:78', role: 'tm', division: '78', divisionName: 'MERIND', allDivisions: false }],
+    roleKey: 'tm:78',
   },
 };
+
+/** RM of region JHH in 78, and BU head of A8: two roles, the session in each. */
+const TWO_ROLES = [
+  { key: 'rm:78', role: 'rm' as const, division: '78', divisionName: 'MERIND', allDivisions: false },
+  { key: 'bu-head:A8', role: 'bu-head' as const, division: 'A8', divisionName: 'AESTHETICS', allDivisions: false },
+];
+const twoRoleUser = (roleKey: string): LoginResponse['user'] => ({
+  ...session.user,
+  id: 'u-M1',
+  name: 'Meera Rao',
+  roles: TWO_ROLES,
+  roleKey,
+  ...(roleKey === 'bu-head:A8'
+    ? { role: 'bu-head', scopeId: 'division-a8a8a8a8', effectiveScope: { level: 'DIVISION', nodes: ['A8'] } }
+    : { role: 'rm', scopeId: 'region-jhhjhhjh', effectiveScope: { level: 'REGION', nodes: ['JHH'] } }),
+});
 
 const version: VersionResponse = {
   dataVersion: 'test-1',
@@ -89,6 +108,7 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
     },
     primary: {
       target: { value: 20_000_000, ach: null, gr: null },
+      divisionTarget: null,
       collection: { value: 17_500_000, ach: 87.5, gr: 12.3 },
       dispatch: { value: 19_200_000, ach: 96, gr: null },
     },
@@ -97,8 +117,8 @@ function tab(overrides: Partial<TabResponse> = {}): TabResponse {
     rcpa: { plan: 1200, actual: 1080, achPct: 90, grPct: 4.2 },
     inventory: { value: 1_000_000 },
     keyBrands: {
-      columns: ['brand', 'tgt', 'disp', 'coll', 'achOnColl', 'grPct', 'sec', 'inventory', 'rcpa'],
-      rows: [['HAPID', 400_000, 380_000, 350_000, 87.5, 9.1, 210_000, 190_000, 240]],
+      columns: KEY_BRAND_COLUMNS,
+      rows: [['HAPID', 400_000, 380_000, 9.1, 350_000, 87.5, 4.2, 12_000, 1.5, 210_000, 190_000, 240, 0.1]],
     },
     creditNote: {
       totalCn: 82_000, expCn: 51_000, srCn: 19_000, pdCn: 12_000, totalOs: 640_000,
@@ -267,6 +287,9 @@ beforeEach(() => {
         return body.otp === DEV_OTP
           ? json(verifyReply.body, verifyReply.status)
           : json({ error: { code: 'UNAUTHORIZED', message: 'Incorrect OTP. 4 attempt(s) left.' } }, 401);
+      }
+      if (url === '/api/auth/session') {
+        return json(twoRoleUser(String((init?.headers as Record<string, string>)['x-dashboard-role'])));
       }
       if (url.includes('/samples/hospital-coverage.json')) return hospitalSample ? json(hospitalSample) : json({}, 404);
       if (url.includes('/details/')) return json(detailFor(url));
@@ -443,6 +466,7 @@ describe('Division performance tab', () => {
     tabPayload = tab({
       primary: {
         target: { value: null, ach: null, gr: null },
+        divisionTarget: null,
         collection: { value: null, ach: null, gr: null },
         dispatch: { value: null, ach: null, gr: null },
       },
@@ -631,9 +655,9 @@ describe('panels with no source in the warehouse', () => {
     const note = 'Collection by brand is the product-level split of collection, net of GST.';
     tabPayload = tab({
       keyBrands: {
-        columns: ['brand', 'tgt', 'disp', 'coll', 'achOnColl', 'grPct', 'sec', 'inventory', 'rcpa'],
-        rows: [['WOSULIN CTG', 150_000_000, 143_500_000, 142_000_000, 94.7, null, null, null, null]],
-        total: ['Total', 450_000_000, 421_000_000, 399_600_000, 88.8, null, null, null, null],
+        columns: KEY_BRAND_COLUMNS,
+        rows: [['WOSULIN CTG', 150_000_000, 143_500_000, null, 142_000_000, 94.7, null, null, null, null, null, null, null]],
+        total: ['Total', 450_000_000, 421_000_000, null, 399_600_000, 88.8, null, null, null, null, null, null, null],
         note,
       },
     });
@@ -648,8 +672,8 @@ describe('panels with no source in the warehouse', () => {
   it('hides table columns that are null in every row', async () => {
     tabPayload = tab({
       keyBrands: {
-        columns: ['brand', 'tgt', 'disp', 'coll', 'achOnColl', 'grPct', 'sec', 'inventory', 'rcpa'],
-        rows: [['HAPID', 400_000, 380_000, null, null, null, null, 190_000, null]],
+        columns: KEY_BRAND_COLUMNS,
+        rows: [['HAPID', 400_000, 380_000, null, null, null, null, null, null, null, 190_000, null, null]],
       },
     });
     renderApp();
@@ -1036,11 +1060,11 @@ describe('geo tab', () => {
         grain: 'zone',
         columns: [
           'name', 'tgt', 'disp', 'dispGrPct', 'coll', 'achOnColl', 'collGrPct', 'pcpmColl',
-          'creditNote', 'cnPct', 'sec', 'inventoryValue', 'rcpa', 'rcpaPctToSec',
+          'creditNote', 'cnPct', 'sec', 'inventoryValue', 'rcpa', 'rcpaPctToSec', 'achOnDisp',
         ],
         codes: ['JH'],
-        rows: [['MER2 - HYDERABAD', 1_000_000, 900_000, 5.1, 850_000, 85, 3.2, 42_500, 40_000, 4.4, 700_000, 300_000, 650_000, 92.9]],
-        total: ['Total', 1_000_000, 900_000, 5.1, 850_000, 85, 3.2, 42_500, 40_000, 4.4, 700_000, 300_000, 650_000, 92.9],
+        rows: [['MER2 - HYDERABAD', 1_000_000, 900_000, 5.1, 850_000, 85, 3.2, 42_500, 40_000, 4.4, 700_000, 300_000, 650_000, 92.9, 90]],
+        total: ['Total', 1_000_000, 900_000, 5.1, 850_000, 85, 3.2, 42_500, 40_000, 4.4, 700_000, 300_000, 650_000, 92.9, 90],
         onTargetCount: 3,
         growingCount: 7,
         degrowingCount: 2,
@@ -1052,6 +1076,10 @@ describe('geo tab', () => {
     expect(screen.getByText('7')).toBeInTheDocument();
     const table = await screen.findByRole('table', { name: /zone performance/i });
     expect(within(table).getByText('Total')).toBeInTheDocument();
+    // Ach% on Disp sits beside Disp, as Ach% on Coll does beside Coll.
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent?.replace(/[▲▼]/g, '').trim());
+    expect(headers.slice(1, 7)).toEqual(['Tgt', 'Disp', 'Ach% on Disp', 'Disp Gr%', 'Coll', 'Ach% on Coll']);
+    expect(within(table).getAllByText('90.0%')).toHaveLength(2); // the row and the Total
   });
 });
 
@@ -1116,3 +1144,83 @@ describe('filter cascade', () => {
   });
 });
 
+
+describe('the division budget', () => {
+  it('shows beside the field budget, with its achievement, for a division-level view', async () => {
+    const base = tab();
+    tabPayload = tab({
+      primary: {
+        ...base.primary!,
+        target: { value: 20_000_000, ach: null, gr: null },
+        collection: { value: 18_000_000, ach: 90, gr: null },
+        divisionTarget: { value: 24_000_000, collAch: 75, dispAch: 70, gr: null },
+      },
+    });
+    renderApp();
+    await waitFor(async () => expect(await kpi('Target (₹ L)')).toHaveTextContent(/200.*Field.*240.*Division/));
+    expect(await kpi('Ach% on Coll')).toHaveTextContent(/90.0%.*Field.*75.0%.*Division/);
+    const table = screen.getByRole('table', { name: /primary performance/i });
+    expect(within(table).getByText('Div Tgt')).toBeInTheDocument();
+    expect(within(table).getByText('Ach% (Div)')).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+
+  it('is not shown when the view has none: the field budget only', async () => {
+    renderApp(); // divisionTarget null — a TM's view
+    await waitFor(async () => expect(await kpi('Target (₹ L)')).toHaveTextContent('Field budget'));
+    expect(await kpi('Target (₹ L)')).not.toHaveTextContent('Division');
+    expect(screen.queryByText('Div Tgt')).not.toBeInTheDocument();
+  });
+});
+
+describe('several roles', () => {
+  const headerOf = (u: string) =>
+    vi.mocked(fetch).mock.calls
+      .filter(([url]) => String(url).includes(u))
+      .map(([, init]) => (init?.headers as Record<string, string>)['x-dashboard-role']);
+
+  it('asks which role to view as after the OTP, then opens the dashboard in it', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    verifyReply = { status: 200, body: { token: session.token, user: twoRoleUser('rm:78') } };
+    renderApp('/division');
+    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: '9000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
+    await screen.findByLabelText('Digit 1 of 6');
+    DEV_OTP.split('').forEach((d, i) => fireEvent.change(screen.getByLabelText(`Digit ${i + 1} of 6`), { target: { value: d } }));
+    fireEvent.click(screen.getByRole('button', { name: /verify/i }));
+
+    expect(await screen.findByText('Choose how to view the dashboard')).toBeInTheDocument();
+    expect(useAuthStore.getState().token).toBeNull(); // not signed in until a role is chosen
+    fireEvent.click(screen.getByRole('button', { name: 'BU Head · AESTHETICS (A8)' }));
+
+    await waitFor(() => expect(useAuthStore.getState().user?.roleKey).toBe('bu-head:A8'));
+    expect(await screen.findByText(/BU Head · Division A8/)).toBeInTheDocument();
+    await waitFor(() => expect(headerOf('/dashboard/').at(-1)).toBe('bu-head:A8'));
+  });
+
+  it('goes straight to the dashboard for someone with one role', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    renderApp('/division');
+    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: '9000000002' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send OTP' }));
+    await screen.findByLabelText('Digit 1 of 6');
+    DEV_OTP.split('').forEach((d, i) => fireEvent.change(screen.getByLabelText(`Digit ${i + 1} of 6`), { target: { value: d } }));
+    fireEvent.click(screen.getByRole('button', { name: /verify/i }));
+    expect(await screen.findByText(/Territory Manager · HQ M2HYDP/)).toBeInTheDocument();
+    expect(screen.queryByText('Choose how to view the dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Switch role' })).not.toBeInTheDocument();
+  });
+
+  it('switches role from the menu, clearing filters chosen in the other role', async () => {
+    useAuthStore.setState({ token: session.token, user: twoRoleUser('rm:78') });
+    useFilterStore.getState().setDimension('zone', ['JH']);
+    renderApp('/division');
+    expect(await screen.findByText(/Regional Manager · Region JHH/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Switch role' }), { target: { value: 'bu-head:A8' } });
+    expect(await screen.findByText(/BU Head · Division A8/)).toBeInTheDocument();
+    expect(headerOf('/auth/session').at(-1)).toBe('bu-head:A8');
+    expect(useFilterStore.getState().zone).toEqual([]);
+    await waitFor(() => expect(headerOf('/dashboard/').at(-1)).toBe('bu-head:A8'));
+  });
+});

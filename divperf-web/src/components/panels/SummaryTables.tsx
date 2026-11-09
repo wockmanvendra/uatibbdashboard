@@ -23,11 +23,14 @@ export function PrimaryPerformance({
   loading: boolean;
   stale: boolean;
 }) {
+  // The division budget beside the field one, for a division-level view only.
+  const div = primary?.divisionTarget ?? null;
   const rows = primary
     ? [
-        { label: 'Tgt', m: primary.target, ach: false },
-        { label: 'Coll', m: primary.collection, ach: true },
-        { label: 'Disp', m: primary.dispatch, ach: true },
+        { label: div ? 'Field Tgt' : 'Tgt', m: primary.target, ach: false, divAch: null },
+        ...(div ? [{ label: 'Div Tgt', m: { value: div.value, ach: null, gr: div.gr }, ach: false, divAch: null }] : []),
+        { label: 'Coll', m: primary.collection, ach: true, divAch: div?.collAch ?? null },
+        { label: 'Disp', m: primary.dispatch, ach: true, divAch: div?.dispAch ?? null },
       ]
     : [];
 
@@ -44,7 +47,8 @@ export function PrimaryPerformance({
             <tr>
               <th scope="col" className="text-left">Primary</th>
               <th scope="col" className="text-right">Value (₹ L)</th>
-              <th scope="col" className="text-right">Ach%</th>
+              <th scope="col" className="text-right">{div ? 'Ach% (Field)' : 'Ach%'}</th>
+              {div && <th scope="col" className="text-right">Ach% (Div)</th>}
               <th scope="col" className="text-right">Gr%</th>
             </tr>
           </thead>
@@ -54,6 +58,7 @@ export function PrimaryPerformance({
                 <th scope="row" className="text-left">{r.label}</th>
                 <td className="text-right" title={full(r.m.value)}>{lakhsAuto(r.m.value)}</td>
                 <td className="text-right">{r.ach ? percent(r.m.ach) : ''}</td>
+                {div && <td className="text-right">{r.ach ? percent(r.divAch) : ''}</td>}
                 <td className="text-right">{pctCell(r.m.gr)}</td>
               </tr>
             ))}

@@ -768,6 +768,34 @@
     box-shadow: none;
   }
 
+  /* One of the person's roles, after sign-in. */
+  .login-role-btn {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    background: var(--surface);
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .login-role-btn:hover:not(:disabled) {
+    border-color: var(--series-disp);
+    background: color-mix(in srgb, var(--series-disp) 6%, var(--surface));
+  }
+
+  .login-role-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
   /* Visually hidden but reachable by screen readers and keyboard. */
   .sr-only-focusable:not(:focus):not(:focus-within) {
     position: absolute;
